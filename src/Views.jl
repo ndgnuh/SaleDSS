@@ -1,6 +1,7 @@
 module Views
 
-using .Helpers
+using ..SaleDSS: ID
+
 using Dash
 using DashBase
 using DashBootstrapComponents
@@ -31,30 +32,24 @@ function rawDataFrame(df, nbrows=10)
     )
 end
 
-function dataPreview(app, dataID, previewID="data-preview")
-	view = dbc_card() do
-		dbc_cardheader("Data preview"),
-		dbc_cardbody() do
-			html_div(; id="$previewID") do
-				loadingWidget()
-			end
-		end
-	end
-    callback!(
-        app,
-        Output(previewID, "children"),
-        Input(dataID, "children"),
-    ) do selected_data, preview_nb_rows, showCleanedData
-        datadir = joinpath(@__DIR__, "..", "data")
-        datafile = joinpath(datadir, string(selected_data))
-        if iszero(filesize(datafile))
-            html_p("Invalid data file")
-        else
-            df = CSV.read(datafile, DataFrame)
-            rawDataFrame(df)
+function dataPicker(id=ID.dataPicker)
+    datadir = joinpath(@__DIR__, "..", "data")
+    files = filter(endswith("csv"), readdir(datadir))
+    options = map(files) do file
+        Dict("label" => file, "value" => file)
+    end
+    return (dbc_label("Select dataset"), dbc_select(; id=id, options=options))
+end
+
+function dataPreview(dataID=ID.data, previewID=ID.dataPreview)
+    view = dbc_card() do
+        dbc_cardheader("Data preview"),
+        dbc_cardbody() do
+            html_div(; id="$previewID") do
+                loadingWidget()
+            end
         end
     end
-	return view
 end
 
 end

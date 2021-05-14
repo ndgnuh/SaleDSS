@@ -11,10 +11,13 @@ using DataFrames
 using JSONTables
 using Plots
 
+ID = (dataPicker = "dataPicker",
+      data = "data",
+      dataPreview = "dataPreview"
+     )
+
 include("alerts.jl")
 using .Alerts
-include("Helpers.jl")
-using .Helpers
 include("Views.jl")
 using .Views
 
@@ -49,41 +52,20 @@ function setup_layout!(app)
             dbc_row() do
                 dbc_col(; width=5) do
                     dbc_card() do
-                        dbc_cardheader() do
-                            dbc_row(; justify="between") do
-                                dbc_col("Input"),
-                                dbc_col() do
-                                    html_a() do
-                                        dbc_label("toggle card")
-                                    end
-                                end
-                            end
-                        end,
+                        dbc_cardheader("Input"),
                         dbc_cardbody() do
-                            dbc_label("Select dataset"),
-                            dataSelect("data-select"),
-                            dbc_label("Number of rows"),
-                            dbc_input(; id="preview-nb-rows", type="number", value=3),
-                            dbc_label("Show cleaned data "),
-                            dbc_checkbox(; id="showCleanedData", checked=true)
+                            Views.dataPicker()
                         end
                     end,
                     # Describe
                     html_br(),
                     dbc_card() do
                         dbc_cardheader("Raw description"),
-                        dbc_cardbody(loadingWidget(); id="datasetDescription")
+                        dbc_cardbody(Views.loadingWidget(); id="datasetDescription")
                     end
                 end,
                 dbc_col(; width=7) do
-                    dbc_card() do
-                        dbc_cardheader("Data preview"),
-                        dbc_cardbody() do
-                            html_div(; id="data-table") do
-                                loadingWidget()
-                            end
-                        end
-                    end
+                    Views.dataPreview()
                 end
             end
         end
