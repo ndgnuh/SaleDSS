@@ -13,6 +13,10 @@ using Plots
 
 include("alerts.jl")
 using .Alerts
+include("Helpers.jl")
+using .Helpers
+include("Views.jl")
+using .Views
 
 function df2json(df::AbstractDataFrame)
     return JSONTables.arraytable(df)
@@ -20,10 +24,6 @@ end
 
 function json2df(jsonStr::AbstractString)
     return DataFrame(JSONTables.jsontable(jsonStr))
-end
-
-function loadingWidget()
-    return dbc_spinner(; color="primary")
 end
 
 include("dataPicker.jl")
@@ -83,25 +83,7 @@ function setup_layout!(app)
                                 loadingWidget()
                             end
                         end
-                    end,
-                    #html_br(),
-                    #dbc_card() do
-                    #    dbc_cardheader("Basic visualization"),
-                    #    dbc_cardbody() do
-                    #        html_div(loadingWidget(); id="basicPlot"),
-                    #        html_div(loadingWidget(); id="basicPlotStep2")
-                    #    end
-                    #end,
-                    #dbc_card() do
-                    #    dbc_cardheader("Draft section"),
-                    #    dbc_cardbody() do
-                    #        try
-                    #            draft()
-                    #        catch e
-                    #            dcc_markdown(string(e))
-                    #        end
-                    #    end
-                    #end
+                    end
                 end
             end
         end
@@ -178,27 +160,6 @@ function setup_callback!(app)
             catch e
                 errMsg = string(e)
                 Alerts.danger(Iterators.take(errMsg, 1000))
-            end
-        end
-    end
-
-    callback!(
-        app,
-        Output("data-table", "children"),
-        Input("data-select", "value"),
-        Input("preview-nb-rows", "value"),
-        Input("showCleanedData", "checked"),
-    ) do selected_data, preview_nb_rows, showCleanedData
-        datadir = joinpath(@__DIR__, "..", "data")
-        datafile = joinpath(datadir, string(selected_data))
-        if iszero(filesize(datafile))
-            html_p("Invalid data file")
-        else
-            df = CSV.read(datafile, DataFrame)
-            if showCleanedData
-                viewDataFrame(df, preview_nb_rows)
-            else
-                viewDataFrame(cleanData(df), preview_nb_rows)
             end
         end
     end
