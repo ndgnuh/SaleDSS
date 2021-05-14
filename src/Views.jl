@@ -13,11 +13,15 @@ using DataFrames
 using JSONTables
 using Plots
 
+function loading()
+	return dbc_spinner(; color="primary")
+end
+
 function loadingWidget()
     return dbc_spinner(; color="primary")
 end
 
-function rawDataFrame(df, nbrows=10)
+function rawDataFrame(df, nbrows=3)
     names_ = names(df)
     thead = html_tr([html_th(col) for col in names_])
     tbody = map(1:min(nbrows, size(df, 1))) do row
@@ -50,6 +54,10 @@ function dataPreview(dataID=ID.data, previewID=ID.dataPreview)
             end
         end
     end
+end
+
+function fieldPicker(df)
+	columns = names(df)
 end
 
 end

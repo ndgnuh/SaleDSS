@@ -13,7 +13,8 @@ using Plots
 
 ID = (dataPicker = "dataPicker",
       data = "data",
-      dataPreview = "dataPreview"
+      dataPreview = "dataPreview",
+      dataDirectory = joinpath(@__DIR__, "..", "data")
      )
 
 include("alerts.jl")
@@ -47,7 +48,7 @@ end
 function setup_layout!(app)
     return app.layout = html_div() do
         dbc_container() do
-            html_div(; id="currentData", style=Dict("display" => "None")),
+            html_div(""; id=ID.data, style=Dict("display" => "None")),
             html_h1("Sale DSS"),
             html_div(; className="divider"),
             html_h2("Customer clustering"),
@@ -62,8 +63,7 @@ function setup_layout!(app)
                     # Describe
                     html_br(),
                     dbc_card() do
-                        dbc_cardheader("Raw description"),
-                        dbc_cardbody(Views.loadingWidget(); id="datasetDescription")
+                        dbc_cardheader("Field picker")
                     end
                 end,
                 dbc_col(; width=7) do
@@ -73,6 +73,7 @@ function setup_layout!(app)
         end
     end
 end
+
 
 function main()
     app = dash(;
