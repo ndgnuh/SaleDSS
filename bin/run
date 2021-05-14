@@ -1,0 +1,27 @@
+#!/bin/env julia
+
+using Revise
+using Pkg
+Pkg.activate(joinpath(@__DIR__, ".."))
+using SaleDSS
+using Dash
+
+devtools = Dash.DevTools(true)
+
+#myapp = Ref(SaleDSS.app)
+
+function revising()
+    try
+        Revise.entr(String[], [SaleDSS]; all=true, postpone=true) do
+            Revise.revise(SaleDSS)
+            #myapp[].layout = SaleDSS.app.layout
+            @info "Revised"
+        end
+    catch e
+        @warn e
+        revising()
+    end
+end
+
+@async SaleDSS.main()
+revising()

@@ -1,0 +1,43 @@
+- Đầu ra của phân cụm thường dùng làm đầu vào cho bài toán khác?
+- Thường phải làm xong mới biết kết quả có dùng được hay k
+
+===
+- Dự báo: họ nhìn plot xong xem xu thế
+- Dự báo phải có kiến giải, chỉ ra tại sao tăng giảm -> eg. bán kém thì km, giúp họ biết khuyến mại kiểu gì
+
+=== 
+- Tuần sau chạy thử
+- Báo cáo kq
+- KQ có hỗ trợ quyết định cho nhà quản lý ko, quyết định gì
+
+---
+- robusnest: khả năng chịu lỗi, xử lý vấn đề
+- scalability: khả năng mở rộng, (eg. bộ nhớ, cách lưu trữ khác)
+- interpretability: tính diễn giải được
+
+---
+- eager learning: học trước thành các tham số của model rồi giải trong thực thế
+- lazy learning: không học trước
+
+--- 
+phân cụm:
+- quan trọng: định nghĩa thế nào là gần nhau
+- tính tăng trưởng: nếu có thêm dữ liệu thì có cần chạy lại không?
+- phương pháp:
+    - phân hoạch: cụm rời nhau (k-mean)
+    - cấu trúc: mỗi cụm có thể có cụm con
+    - mật độ: khái niệm gần gũi (eg. euclide, khả năng tiếp xúc???)
+    - chia lưới dựa trên trường dữ liệu
+    - mô hình: dựa trên phân phối, tìm kỳ vọng của cụm
+    - phân cụm trên ràng buộc của ng dùng
+    - phân cụm dựa trên 1 một đối tượng có liên kết đối tượng khác hay k
+    - phân cụm dựa trên đồ thị
+- kmean
+    - elbow method
+    - nhạy với phần tử nhiễu
+- mở rộng k-modes
+- tránh nhiễu: k-medoids
+    - tâm bắt buộc là một đối tượng dữ liệu nào đó
+- có cấu trúc:
+    - DIANA: chia nhỏ dần
+    - AGNES: gộp lại dần
