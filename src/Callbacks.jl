@@ -92,50 +92,53 @@ callbacks[:fieldSelectionSubmit] = function (app)
     ) do children, data
         if !isempty(data)
             selections = filter(x -> x.type === "Select" && x.props.value !== "Skip", children)
-            @show selections[1]
             columns = map(selections) do selection
                 selection.props.id => selection.props.value
             end
-            JSON3.write(columns)
+            JSON3.write(Dict(columns))
         end
     end
 end
 
-callbacks[:calculateDistance] = function (app)
-    callback!(
-        app,
-        Output(ID.clusterResult, "children"),
-        Input(ID.dataNames, "children"),
-        State(ID.data, "children"),
-    ) do dataNamesStr, dataStr
-        if isempty(dataNames) || isempty(data)
-            return ""
-        end
-        dataNames = JSON3.read(dataNamesStr)
-        data = json2df(dataStr)
-        return "0"
-    end
-end
+#callbacks[:calculateDistance] = function (app)
+#    callback!(
+#        app,
+#        Output(ID.clusterResult, "children"),
+#        Input(ID.dataNames, "children"),
+#        State(ID.data, "children"),
+#    ) do dataNamesStr, dataStr
+#        if isnothing(dataStr) ||
+#           isnothing(dataNamesStr) ||
+#           isempty(dataNamesStr) ||
+#           isempty(dataStr)
+#            return ""
+#        end
+#        columns = Dict{Symbol,String}(JSON3.read(dataNamesStr))
+#        data = json2df(dataStr)
+#        distances = Process.calculateDistance(data, columns, :gower)
+#        return string(distances)
+#    end
+#end
 
-callbacks[:clusterFieldsToPlot] = function (app)
-    function namesToOptions(names_)
-        return map(name -> (value=name, label=name), names_)
-    end
-    function cb(data)
-        if isempty(data)
-            []
-        else
-            df = json2df(data)
-            namesToOptions(names(df))
-        end
-    end
-    callback!(
-        cb, app, Output(ID.clusterSelectField1, "options"), Input(ID.data, "children")
-    )
-    return callback!(
-        cb, app, Output(ID.clusterSelectField2, "options"), Input(ID.data, "children")
-    )
-end
+#callbacks[:clusterFieldsToPlot] = function (app)
+#    function namesToOptions(names_)
+#        return map(name -> (value=name, label=name), names_)
+#    end
+#    function cb(data)
+#        if isempty(data)
+#            []
+#        else
+#            df = json2df(data)
+#            namesToOptions(names(df))
+#        end
+#    end
+#    callback!(
+#        cb, app, Output(ID.clusterSelectField1, "options"), Input(ID.data, "children")
+#    )
+#    return callback!(
+#        cb, app, Output(ID.clusterSelectField2, "options"), Input(ID.data, "children")
+#    )
+#end
 
 function setupCallbacks!(app)
     for (_, setCallback!) in callbacks
