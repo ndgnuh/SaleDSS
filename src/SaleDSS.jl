@@ -13,10 +13,21 @@ using Plots
 
 ID = (dataPicker = "dataPicker",
       data = "data",
+      dataNames = "data-names",
       dataPreview = "dataPreview",
-      dataDirectory = joinpath(@__DIR__, "..", "data")
+      dataDirectory = joinpath(@__DIR__, "..", "data"),
+      fieldSelection = "field-selection",
+      fieldSelectionSubmit = "field-selection-submit",
+      clusterSelectNumber = "cluster-select-number",
+      clusterSelectMethod = "cluster-select-method",
+      clusterSelectField1 = "cluster-select-field-1",
+      clusterSelectField2 = "cluster-select-field-2",
+      clusterSubmit = "cluster-submit",
+      clusterResult = "cluster-result",
      )
 
+include("Process.jl")
+using .Process
 include("alerts.jl")
 using .Alerts
 include("Views.jl")
@@ -46,12 +57,14 @@ function quickCard(title, body)
 end
 
 function setup_layout!(app)
+    displayNone = Dict("display" => "None")
     return app.layout = html_div() do
         dbc_container() do
-            html_div(""; id=ID.data, style=Dict("display" => "None")),
+            html_div(""; id=ID.data, style=displayNone),
+            html_div(""; id=ID.dataNames, style=displayNone),
             html_h1("Sale DSS"),
             html_div(; className="divider"),
-            html_h2("Customer clustering"),
+            html_h3("Choose dataset"),
             dbc_row() do
                 dbc_col(; width=5) do
                     dbc_card() do
@@ -60,16 +73,21 @@ function setup_layout!(app)
                             Views.dataPicker()
                         end
                     end,
-                    # Describe
                     html_br(),
                     dbc_card() do
-                        dbc_cardheader("Field picker")
-                    end
+                        dbc_cardheader("Input"),
+                        dbc_cardbody(id=ID.fieldSelection)
+                    end,
+                    html_br(),
+                    Views.clusterView()
                 end,
                 dbc_col(; width=7) do
-                    Views.dataPreview()
+                    Views.dataPreview(),
+                    html_br(),
+                    Views.clusterResultView()
                 end
-            end
+            end,
+            html_h3("Field selection")
         end
     end
 end
