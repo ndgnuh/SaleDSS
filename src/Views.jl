@@ -17,6 +17,8 @@ using JSONTables
 using PlotlyJS
 using JLD2
 
+include("plots.jl")
+
 function genOptions(arr)
     return [(value=a, label=a) for a in arr]
 end
@@ -191,20 +193,6 @@ function cl_output()
     end
 end
 
-# PLOTS
-
-function pl_scatter(df)
-    gdf = groupby(df, 3)
-    data = [(
-        x=clus.x,#
-        y=clus.y,
-        mode="markers",
-        marker=(size=5,),
-    ) for clus in gdf]
-    #return plot(traces)
-    return dcc_graph(; figure=(data=data, layout=(clickmode="event+select",)))
-end
-
 # DATA INPUT
 
 function dt_input()
@@ -215,6 +203,7 @@ function dt_input()
         html_br(),
         dbc_label("Processes"),
         dbc_checklist(;
+            style=Dict("display" => "none"),
             id=ID.DT_PROCESSES,
             switch=true,
             options=[#

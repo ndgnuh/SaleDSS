@@ -83,7 +83,9 @@ callbacks[:ag_init] = function (app)
             options = map(columns) do name
                 (value=name, label=name)
             end
-            value = findfirst(occursin("id"), lowercase.(columns))
+            value = findfirst(
+                x -> occursin("id", x) && occursin("customer", x), lowercase.(columns)
+            )
             if isnothing(value)
                 options, nothing
             else
@@ -146,7 +148,7 @@ callbacks[:ag_add] = function (app)
         _, maxidx = findmax(something.(timestamps, 0))
         idx = length(something(children, [])) + 1
         if something(maxidx, 1) > 1
-            del!(children, maxidx)
+            del!(children, maxidx - 1)
         else
             add!(children, idx)
         end
@@ -177,26 +179,28 @@ callbacks[:ag_output] = function (app)
         end
         aggregations = map(1:length(columns)) do i
             col = Symbol(columns[i])
-            st = getproperty(Process.TYPES, Symbol(scitypes[i]))
             agg = getproperty(Process.AGG_TYPES, Symbol(aggs[i]))
-            f = if st === Process.TYPES.CATEGORICAL
-                x -> categorical(agg(x))
-            elseif st === Process.TYPES.HIERARCHICAL
-                x -> begin
-                    y = categorical(agg(x))
-                    ordered!(y)
-                    return y
-                end
-            else
-                agg
-            end
-            col => f
+            col => agg
         end
-        #aggregations = Dict(@. Symbol(columns) => aggregations)
+
+        # aggregate
         df = jldopen(f -> f["data"], STF)
         aggdf = combine(groupby(df, id), aggregations...)
+
+        # Convert column to correct type
+        map(2:size(aggdf, 2)) do i
+            st = getproperty(Process.TYPES, Symbol(scitypes[i - 1]))
+            if st === Process.TYPES.HIERARCHICAL
+                X = categorical(aggdf[:, i])
+                ordered!(X, true)
+                aggdf[:, i] = X
+            else
+                aggdf[:, i] = categorical(aggdf[:, i])
+            end
+        end
         jldopen(STF, "a") do f
             delete!(f, "aggdata")
+            delete!(f, "dists")
             f["aggdata"] = aggdf
         end
         return (Views.rawDF(aggdf, 5), "")
@@ -210,120 +214,98 @@ callbacks[:cl_init] = function (app)
         app,
         Output(ID.CL_PLOT_X, "options"),
         Output(ID.CL_PLOT_Y, "options"),
+        Output(ID.CL_PLOT_X, "value"),
+        Output(ID.CL_PLOT_Y, "value"),
         Input(SIG.POST_AG, "children"),
-        Input(ID.AG_OUTPUT, "children")
+        Input(ID.AG_OUTPUT, "children"),
     ) do sig, c
         if !isfile(STF) || isempty(c)
-            return [], []
+            return [], [], nothing, nothing
         end
         aggdata = jldopen(f -> get(f, "aggdata", nothing), STF)
         columns = names(aggdata)
         options = [(value=c, label=c) for c in columns]
-        return options, options
+        value = get(columns, 1, nothing)
+        return options, options, value, value
     end
 end
 
-#callbacks[:cl_input] = function (app)
-#    callback!(
-#        app, #
-#        Ouptut()
-#        Input(ID.CL_PLOT_X, "options"),
-#        Input(ID.CL_PLOT_Y, "options"),
-#        Input(ID.SIG_DATA, "children"),
-#        Input(ID.AG_SEL_ID, "value"),
-#    ) do sig, _
-#        if isfile(STF)
-#            data = jldopen(f -> f["data"], STF)
-#            columns = names(data)
-#            options = Views.genOptions(columns)
-#            options, options
-#        else
-#            nothing, nothing
-#        end
-#    end
-#end
+callbacks[:cl_run] = function (app)
+    function elbow(mth, dists)
+        results = map(1:9) do k
+            try
+                Process.cluster(mth, dists, k)
+            catch e
+                @warn e
+                nothing
+            end
+        end
+        return filter(!isnothing, results)
+    end
 
-#callbacks[:cl_run] = function (app)
-#    callback!(#
-#        app,
-#        Output(ID.SIG_CL_DONE, "children"),
-#        Input(ID.CL_RUN_BTN, "n_clicks"),
-#        State(ID.AG_SEL_ID, "value"),
-#        State(ID.CL_NCL, "value"),
-#        State(ID.CL_SEL_MTH, "value"),
-#    ) do _, id, ncl, mth
-#        if !isfile(STF)
-#            return nothing
-#        end
-#        hasDist = jldopen(f -> "dists" ∈ keys(f), STF)
-#        # caching distances
-#        dists = if !hasDist
-#            aggdata = jldopen(f -> f["aggdata"], STF)
-#            dists = Process.gower(select(aggdata, Not(id)))
-#            jldopen(STF, "a") do f
-#                f["dists"] = dists
-#            end
-#            dists
-#        else
-#            jldopen(f -> f["dists"], STF)
-#        end
-#        result = Process.cluster(mth, dists, ncl)
-#        jldopen("clres.jld2", "w") do f
-#            f["result"] = result
-#        end
-#        return 1
-#    end
-#end
+    function single(mth, dists, k)
+        return Process.cluster(mth, dists, k)
+    end
 
-callbacks[:cl_done] = function (app)
-    callback!(
-        app,#
+    callback!(#
+        app,
         Output(ID.CL_PLOT, "children"),
-        Input(ID.SIG_CL_DONE, "children"),
-        Input(ID.CL_PLOT_X, "value"),
-        Input(ID.CL_PLOT_Y, "value"),
+        Input(ID.CL_RUN_BTN, "n_clicks_timestamp"),
+        Input(ID.CL_ELBOW_BTN, "n_clicks_timestamp"),
         State(ID.AG_SEL_ID, "value"),
-    ) do sig, xcol, ycol, id
-        if !isfile("clres.jld2") || !isfile(STF) || isnothing(xcol) || isnothing(ycol)
-            nothing
+        State(ID.CL_NCL, "value"),
+        State(ID.CL_SEL_MTH, "value"),
+        State(ID.CL_PLOT_X, "value"),
+        State(ID.CL_PLOT_Y, "value"),
+    ) do single_ts, elbow_ts, id, ncl, mth, colx, coly
+        if !isfile(STF) || isnothing(colx) || isnothing(coly)
+            return ""
+        end
+        f = jldopen(STF, "a")
+        data = f["aggdata"]
+        columns = names(data)
+        # validate cache
+        if !(colx in columns && coly in columns)
+            delete!(f, "dists")
+        end
+        # cache distance
+        if !haskey(f, "dists")
+            f["dists"] = Process.gower(select(data, Not(id)))
+        end
+        dists = f["dists"]
+        close(f)
+        if something(single_ts, 0) > something(elbow_ts, 9)
+            result = single(mth, dists, ncl)
+            Views.single_plot(result, data[!, colx], data[!, coly])
         else
-            data, aggdata = jldopen(f -> (f["data"], f["aggdata"]), STF)
-            result = jldopen(f -> f["result"], "clres.jld2")
-            aggdata.as = result.assignments
-            df = innerjoin(data, aggdata; on=id, makeunique=true)
-            df = select(df, [xcol, ycol, "as"])
-            rename!(df, [:x, :y, :as])
-            Views.pl_scatter(df)
+            result = elbow(mth, dists)
+            Views.elbow_plot(result)
         end
     end
 end
 
-callbacks[:ex] = function (app)
-    callback!(
-        app,
-        Output("test-add", "children"),
-        Input("add", "n_clicks"),
-        State("test-add", "children"),
-    ) do _, children
-        options = Views.genOptions(rand(-3:3, 5))
-        s = dbc_select(; options=options, id=(type="Added_", index=ALL))
-        @show children
-        if isnothing(children)
-            return [s]
-        else
-            push!(children, s)
-            children
-        end
-    end
-
-    callback!(
-        app,
-        Output("group-output", "children"),
-        Input((type="Added_", index=ALL), "value"),
-    ) do values
-        string(values)
-    end
-end
+#callbacks[:cl_done] = function (app)
+#    callback!(
+#        app,#
+#        Output(ID.CL_PLOT, "children"),
+#        Input(ID.SIG_CL_DONE, "children"),
+#        Input(ID.CL_PLOT_X, "value"),
+#        Input(ID.CL_PLOT_Y, "value"),
+#        State(ID.AG_SEL_ID, "value"),
+#    ) do sig, xcol, ycol, id
+#        if !isfile("clres.jld2") || !isfile(STF) || isnothing(xcol) || isnothing(ycol)
+#            nothing
+#        else
+#            data, aggdata = jldopen(f -> (f["data"], f["aggdata"]), STF)
+#            result = jldopen(f -> f["result"], "clres.jld2")
+#            aggdata.as = result.assignments
+#            df = innerjoin(data, aggdata; on=id, makeunique=true)
+#            df = select(df, [xcol, ycol, "as"])
+#            rename!(df, [:x, :y, :as])
+#            Views.pl_scatter(df)
+#        end
+#    end
+#end
 
 function setupCallbacks!(app)
     for (_, setCallback!) in callbacks
