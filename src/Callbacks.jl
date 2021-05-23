@@ -1,6 +1,6 @@
 module Callbacks
 
-using ..SaleDSS: ID
+using ..SaleDSS: ID, STF
 using ..Views
 using ..Process
 using Dash
@@ -14,6 +14,11 @@ using DataFrames
 using JSONTables
 using Plots
 using JSON3
+using JLD2
+
+function loadingID(id)
+    return "$(id)-loading"
+end
 
 function getTriggerID(ctx)
     map(ctx.triggered) do trig
@@ -31,114 +36,195 @@ end
 
 callbacks = Dict{Symbol,Function}()
 
-callbacks[:afterPickDataSet] = function (app)
-    function cb(nothing_::Nothing)
+callbacks[:pickdata] = function (app)
+    callback!(app, Output(ID.SIG_DATA, "children"), Input(ID.DATA_PICKER, "value")) do bname
+        if !isempty(something(bname, ""))
+            dataFile = joinpath(ID.dataDirectory, string(bname))
+            if isfile(dataFile)
+                data = CSV.read(dataFile, DataFrame)
+                JLD2.jldopen(STF, "w") do f
+                    f["data"] = data
+                    f["columns"] = names(data)
+                end
+            end
+        end
         return ""
     end
-    function cb(dataBasename)
-        sleep(1)
-        dataFile = joinpath(ID.dataDirectory, string(dataBasename))
-        if isfile(dataFile)
-            data = CSV.read(dataFile, DataFrame)
-            df2json(data)
+end
+
+callbacks[:previewData] = function (app)
+    return callback!(
+        app,#
+        Output(ID.DATA_PREVIEW, "children"),
+        Input(ID.SIG_DATA, "children"),
+    ) do s
+        if !isfile(STF)
+            return ""
+        end
+        if !isnothing(s)
+            data = JLD2.jldopen(STF, "r") do f
+                f["data"]
+            end
+            Views.rawDataFrame(data)
         else
             ""
         end
     end
-    return callback!(cb, app, Output(ID.data, "children"), Input(ID.dataPicker, "value"))
 end
 
-callbacks[:previewData] = function (app)
-    function cb(dataBasename::Nothing, dataJSON::Nothing)
-        return "Chose a dataset"
-    end
-    function cb(dataBasename::AbstractString, dataJSON::Nothing)
-        return "Loading"
-    end
-    function cb(_, dataJSON)
-        if isempty(dataJSON)
-            "Chose dataset"
-        else
-            data = json2df(dataJSON)
-            Views.rawDataFrame(data)
+callbacks[:aggid] = function (app)
+    callback!(app, Output(ID.AGG, "children"), Input(ID.SIG_DATA, "children")) do sig
+        if isnothing(sig)
+            return ""
         end
-    end
-    return callback!(
-        cb,
-        app,
-        Output(ID.dataPreview, "children"),
-        Input(ID.dataPicker, "value"),
-        Input(ID.data, "children"),
-    )
-end
-
-callbacks[:fieldSelection] = function (app)
-    callback!(app, Output(ID.fieldSelection, "children"), Input(ID.data, "children")) do dataStr
-        if isempty(dataStr)
-            "Choose dataset"
-        else
-            data = json2df(dataStr)
-            Views.fieldSelection(data)
+        if !isfile(STF)
+            return ""
         end
+        data, columns = jldopen(STF) do f
+            f["data"], f["columns"]
+        end
+        Views.aggIDSelection(columns)
     end
 end
 
-callbacks[:fieldSelectionSubmit] = function (app)
+callbacks[:aggrows] = function (app)
     callback!(
+        app, #
+        Output(ID.AGG_ROWS, "children"),
+        Input(ID.SIG_DATA, "children"),
+    ) do sig
+        if !isfile(STF)
+            return ""
+        end
+        columns = jldopen(f -> f["columns"], STF)
+        data = jldopen(f -> f["data"], STF)
+        colScitype = Process.typeByColumns(data)
+        Views.aggregationRows(colScitype)
+    end
+end
+
+callbacks[:aggselected] = function (app)
+    callback!(#
         app,
-        Output(ID.dataNames, "children"),
-        Input(ID.fieldSelection, "children"),
-        State(ID.data, "children"),
-    ) do children, data
-        if !isempty(data)
-            selections = filter(x -> x.type === "Select" && x.props.value !== "Skip", children)
-            columns = map(selections) do selection
-                selection.props.id => selection.props.value
-            end
-            JSON3.write(Dict(columns))
+        Output(ID.AGG_SUBMIT_BTN, "style"),
+        Input(ID.AGG_ROWS, "children"),
+    ) do rows
+        if isempty(something(rows, ""))
+            Dict("display" => "none")
         end
     end
 end
 
-#callbacks[:calculateDistance] = function (app)
-#    callback!(
-#        app,
-#        Output(ID.clusterResult, "children"),
-#        Input(ID.dataNames, "children"),
-#        State(ID.data, "children"),
-#    ) do dataNamesStr, dataStr
-#        if isnothing(dataStr) ||
-#           isnothing(dataNamesStr) ||
-#           isempty(dataNamesStr) ||
-#           isempty(dataStr)
-#            return ""
-#        end
-#        columns = Dict{Symbol,String}(JSON3.read(dataNamesStr))
-#        data = json2df(dataStr)
-#        distances = Process.calculateDistance(data, columns, :gower)
-#        return string(distances)
-#    end
-#end
+callbacks[:aggsubmitted] = function (app)
+    callback!(#
+        app,
+        Output(ID.AGG_RESULT, "children"),
+        Input(ID.AGG_SUBMIT_BTN, "n_clicks"),
+        Input(ID.AGG_ROWS, "children"),
+        Input(ID.AGG_ID_SELECTION, "value"),
+    ) do _, rows, id
+        if !isempty(something(rows, []))
+            aggSelects = map(rows) do r
+                col = r.props.children[1].props.children.props.children
+                sel = r.props.children[3].props.children.props.value
+                selFunc = getproperty(Process.AGG_TYPES, Symbol(sel))
+                Symbol(col) => selFunc
+            end
+            aggSelects = filter(aggSelects) do sel
+                !isnothing(sel[2])
+            end
+            aggSelects = map(aggSelects) do sel
+                sel[1] => sel[2] => sel[1]
+            end
+            data = jldopen(f -> f["data"], STF)
+            aggData = combine(groupby(data, id), aggSelects...)
+            jldopen(STF, "w") do f
+                f["aggdata"] = aggData
+                f["data"] = data
+                f["columns"] = names(data)
+            end
+            [
+                html_div("Records: " * string(size(aggData, 1))),#
+                Views.rawDataFrame(aggData),
+            ]
+        end
+    end
+end
 
-#callbacks[:clusterFieldsToPlot] = function (app)
-#    function namesToOptions(names_)
-#        return map(name -> (value=name, label=name), names_)
-#    end
-#    function cb(data)
-#        if isempty(data)
-#            []
-#        else
-#            df = json2df(data)
-#            namesToOptions(names(df))
-#        end
-#    end
-#    callback!(
-#        cb, app, Output(ID.clusterSelectField1, "options"), Input(ID.data, "children")
-#    )
-#    return callback!(
-#        cb, app, Output(ID.clusterSelectField2, "options"), Input(ID.data, "children")
-#    )
-#end
+# CLUSTERING
+
+callbacks[:cl_input] = function (app)
+    callback!(
+        app, #
+        Output(ID.CL_PLOT_X, "options"),
+        Output(ID.CL_PLOT_Y, "options"),
+        Input(ID.SIG_DATA, "children"),
+        Input(ID.AGG_ID_SELECTION, "value"),
+    ) do sig, _
+        if isfile(STF)
+            columns = jldopen(f -> f["columns"], STF)
+            options = Views.genOptions(columns)
+            options, options
+        else
+            nothing, nothing
+        end
+    end
+end
+
+callbacks[:cl_run] = function (app)
+    callback!(#
+        app,
+        Output(ID.SIG_CL_DONE, "children"),
+        Input(ID.CL_RUN_BTN, "n_clicks"),
+        State(ID.AGG_ID_SELECTION, "value"),
+        State(ID.CL_NCL, "value"),
+        State(ID.CL_SEL_MTH, "value"),
+    ) do _, id, ncl, mth
+        if !isfile(STF)
+            return nothing
+        end
+        hasDist = jldopen(f -> "dists" ∈ keys(f), STF)
+        # caching distances
+        dists = if !hasDist
+            aggdata = jldopen(f -> f["aggdata"], STF)
+            dists = Process.gower(select(aggdata, Not(id)))
+            jldopen(STF, "a") do f
+                f["dists"] = dists
+            end
+            dists
+        else
+            jldopen(f -> f["dists"], STF)
+        end
+        result = Process.cluster(mth, dists, ncl)
+        jldopen("clres.jld2", "w") do f
+            f["result"] = result
+        end
+        return 1
+    end
+end
+
+callbacks[:cl_done] = function (app)
+    callback!(
+        app,#
+        Output(ID.CL_PLOT, "children"),
+        Input(ID.SIG_CL_DONE, "children"),
+        Input(ID.CL_PLOT_X, "value"),
+        Input(ID.CL_PLOT_Y, "value"),
+        State(ID.AGG_ID_SELECTION, "value"),
+    ) do sig, xcol, ycol, id
+        if !isfile("clres.jld2") || !isfile(STF) || isnothing(xcol) || isnothing(ycol)
+            nothing
+        else
+            data, aggdata = jldopen(f -> (f["data"], f["aggdata"]), STF)
+            result = jldopen(f -> f["result"], "clres.jld2")
+            aggdata.as = result.assignments
+            df = innerjoin(data, aggdata; on=id, makeunique=true)
+            df = select(df, [xcol, ycol, "as"])
+            rename!(df, [:x, :y, :as])
+            Views.pl_scatter(df)
+        end
+    end
+end
 
 function setupCallbacks!(app)
     for (_, setCallback!) in callbacks
@@ -148,78 +234,3 @@ function setupCallbacks!(app)
 end
 
 end
-
-#function setup_callback!(app)
-#    callback!(
-#        app, Output("currentData", "children"), Input("data-select", "value")
-#    ) do selectedFile
-#        datadir = joinpath(@__DIR__, "..", "data")
-#        datafile = joinpath(datadir, string(selectedFile))
-#        if iszero(filesize(datafile))
-#            ""
-#        else
-#            df2json(cleanData!(CSV.read(datafile, DataFrame)))
-#        end
-#    end
-#    callback!(
-#        app, Output("datasetDescription", "children"), Input("currentData", "children")
-#    ) do currentData
-#        if isempty(currentData)
-#            Alerts.chooseDataset()
-#        else
-#            try
-#                df = json2df(currentData)
-#                viewDataFrame(describe(df))
-#            catch e
-#                Alerts.danger(string(e))
-#            end
-#        end
-#    end
-#
-#    callback!(
-#        app, Output("basicPlot", "children"), Input("currentData", "children")
-#    ) do currentDataString
-#        if isempty(currentDataString)
-#            return Alerts.chooseDataset()
-#        end
-#        try
-#            df = json2df(currentDataString)
-#            plotFieldOptions = map(names(df)) do name
-#                (label=name, value=name)
-#            end
-#            dbc_row() do
-#                dbc_col() do
-#                    dbc_label("Choose field(s) to plot")
-#                end,
-#                dbc_col() do
-#                    dbc_select(; options=plotFieldOptions, id="fieldToPlot")
-#                end
-#            end
-#        catch e
-#            return string(e)
-#        end
-#    end
-#
-#    callback!(
-#        app,
-#        Output("basicPlotStep2", "children"),
-#        Input("currentData", "children"),
-#        Input("fieldToPlot", "value"),
-#    ) do currentData, fieldToPlot
-#        if isempty(currentData)
-#            Alerts.chooseDataset()
-#        elseif isempty(fieldToPlot)
-#            @info "[Field to plot] Not found"
-#            Alerts.warning("chose a field")
-#        else
-#            try
-#                df = json2df(currentData)
-#                data = df[!, fieldToPlot]
-#                plotline(data; name=fieldToPlot)
-#            catch e
-#                errMsg = string(e)
-#                Alerts.danger(Iterators.take(errMsg, 1000))
-#            end
-#        end
-#    end
-#end

@@ -1,6 +1,8 @@
 module Views
 
-using ..SaleDSS: ID
+using ..SaleDSS: ID, STF
+using ..Process: TYPES, AGG_TYPES
+using ..Process
 
 using Dates
 using Dash
@@ -12,10 +14,30 @@ using DashTable
 using CSV
 using DataFrames
 using JSONTables
-using Plots
+using PlotlyJS
+using JLD2
 
-function loading()
-    return dbc_spinner(; color="primary")
+function genOptions(arr)
+    return [(value=a, label=a) for a in arr]
+end
+
+function states()
+    names = Dict(
+        ID.SIG_CL_DONE => "",
+        ID.SIG_DATA => "",
+        ID.DATA => "",
+        ID.DATA_NAMES => "",
+        ID.AGG_COUNT => 0,
+    )
+    return [
+        html_div(value; id=name, style=Dict("display" => "None")) for (name, value) in names
+    ]
+end
+
+function loading(id)
+    return html_div(; id=id) do
+        dbc_spinner(; color="primary"), "Loading..."
+    end
 end
 
 function loadingWidget()
@@ -37,7 +59,7 @@ function rawDataFrame(df, nbrows=3)
     )
 end
 
-function dataPicker(id=ID.dataPicker)
+function dataPicker(id=ID.DATA_PICKER)
     datadir = joinpath(@__DIR__, "..", "data")
     files = filter(endswith("csv"), readdir(datadir))
     options = map(files) do file
@@ -46,10 +68,11 @@ function dataPicker(id=ID.dataPicker)
     return (dbc_label("Select dataset"), dbc_select(; id=id, options=options))
 end
 
-function dataPreview(dataID=ID.data, previewID=ID.dataPreview)
+function dataview(dataID=ID.DATA, previewID=ID.DATA_PREVIEW)
     return view = dbc_card() do
         dbc_cardheader("Data preview"),
         dbc_cardbody() do
+            html_div()
             html_div(; id="$previewID") do
                 loadingWidget()
             end
@@ -57,74 +80,131 @@ function dataPreview(dataID=ID.data, previewID=ID.dataPreview)
     end
 end
 
-function fieldSelection(data)
-    columns = names(data)
-    options = [
-        (label="Skip", value="Skip"),
-        (label="Numeric", value="Numeric"),
-        (label="DateTime", value="DateTime"),
-        (label="Categorical", value="Categorical"),
-        (label="Hierarchical", value="Hierarchical"),
-    ]
-    function valueByType(col)
-        T = eltype(data[!, col])
-        if occursin("id", lowercase(col)) || occursin("name", lowercase(col))
-            "Skip"
-        elseif T <: Integer && length(unique(data[!, col])) < 10
-            "Hierarchical"
-        elseif T <: Number
-            "Numeric"
-        elseif T <: Dates.AbstractDateTime
-            "DateTime"
-        elseif T <: AbstractString
-            "Categorical"
-        else
-            "Skip"
-        end
-    end
-    return reduce(
-        vcat,
-        [
-            [
-                dbc_label(column),
-                dbc_select(; value=valueByType(column), id=column, options=options),
-            ] for column in columns
-        ],
-    )
+function select(options::AbstractVector{T}, selected::Union{T,Nothing}; id) where {T}
+    return dbc_select(; id=id, options=Dict(o => o for o in options), value=selected)
+end
+function select(options, selectedindex; id)
+    return select(options, options[selectedindex]; id=id)
 end
 
-function clusterView()
-    clusterNumber = dbc_input(; type="number", value=3, id=ID.clusterSelectNumber)
-    clusterPlotField1 = dbc_select(; id=ID.clusterSelectField1)
-    clusterPlotField2 = dbc_select(; id=ID.clusterSelectField2)
-    clusteringMethod = dbc_select(;
-        options=[(value="PAM", label="PAM"), (value="K-Mean", label="K-Mean")], value="PAM"
-    )
-
-    submitButton = html_div() do
-        html_br(), dbc_button("Cluster"; color="primary", id=ID.clusterSubmit)
+function aggIDSelection(columns)
+    lc = lowercase.(columns)
+    i = findfirst(@. occursin("customer", lc))
+    options = map(columns) do c
+        (value=c, label=c)
     end
+    html_div() do
+        dbc_label("ID Column: "),
+        dbc_select(; #
+            options=options,
+            value=string(columns[something(i, 1)]),
+            id=ID.AGG_ID_SELECTION,
+        )
+    end
+end
+function aggIDSelection()
+    return dbc_select(; options=[], id=ID.AGG_ID_SELECTION)
+end
 
+function aggregationRows(colScitype)
+    function row(col)
+        dbc_row() do
+            dbc_col(; width=4) do
+                dbc_label(col)
+            end,
+            dbc_col(; width=4) do
+                dbc_select(; #
+                    options=genOptions(keys(TYPES)),
+                    id="$(col)-scitype",
+                    value=colScitype[col],
+                )
+            end,
+            dbc_col(; width=4) do
+                dbc_select(; #
+                    options=genOptions(keys(AGG_TYPES)),
+                    id="$(col)-aggtype",
+                    value=Process.defaultAggType(colScitype[col]),
+                )
+            end
+        end
+    end
+    rows = [row(name) for name in keys(colScitype)]
+    return rows
+end
+
+function aggregationView()
+    return html_div() do
+        html_div(aggIDSelection(); id=ID.AGG), #
+        html_br(),
+        html_div(; id=ID.AGG_ROWS),
+        html_br(),
+        html_div(; id=ID.AGG_SUBMIT) do
+            dbc_button("OK"; color="primary", id=ID.AGG_SUBMIT_BTN)
+        end
+    end
+end
+
+function aggregationResult()
     dbc_card() do
-        dbc_cardheader("Clustering"),
+        dbc_cardheader("Aggregated data"),
         dbc_cardbody() do
-            dbc_label("Number of cluster(s)"),
-            clusterNumber,
-            dbc_label("Plot x-axis"),
-            clusterPlotField1,
-            dbc_label("Plot y-axis"),
-            clusterPlotField2,
-            dbc_label("Choose clustering method"),
-            clusteringMethod,
-            submitButton
+            html_div(; id=ID.AGG_RESULT)
         end
     end
 end
 
-function clusterResultView()
+function cl_UI()
     dbc_card() do
-        dbc_cardheader("Clustering Result"), dbc_cardbody(; id=ID.clusterResult)
+        dbc_cardheader("Clustering Input"),
+        dbc_cardbody() do
+            cl_Input(), html_br(), cl_Output()
+        end
     end
+end
+
+function cl_Input()
+    return html_div() do
+        dbc_label("Number of cluster"),
+        dbc_input(; type="number", value=3, id=ID.CL_NCL),
+        dbc_label("Clustering method"),
+        dbc_select(;#
+            options=genOptions(Process.CL_METHODS),
+            id=ID.CL_SEL_MTH,
+        ),
+        html_div() do
+            dbc_button("Cluster"; id=ID.CL_RUN_BTN, color="primary")
+        end
+    end
+end
+
+function cl_Output()
+    dbc_card() do
+        dbc_cardheader("Clustering output"),
+        dbc_cardbody() do
+            dbc_label("X axis column"),
+            dbc_select(; id=ID.CL_PLOT_X),
+            dbc_label("Y axis column"),
+            dbc_select(; id=ID.CL_PLOT_Y),
+            dbc_label("Result plot"),
+            html_div(; id=ID.CL_PLOT)
+        end
+    end
+end
+
+# PLOTS
+
+function pl_scatter(df)
+    gdf = groupby(df, 3)
+    data = [
+        (
+            x=clus.x,#
+            y=clus.y,
+            mode="markers",
+            marker=(size=5,),
+        ) for clus in gdf
+    ]
+    #return plot(traces)
+    return dcc_graph(; figure=(data=data, layout=(clickmode="event+select",)))
 end
 
 # End module
