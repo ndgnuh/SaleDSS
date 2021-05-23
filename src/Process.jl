@@ -8,6 +8,8 @@ using StatsBase
 using Clustering
 using PAM
 
+ACTS = [:Aggregate, :PCA, :CLUS]
+
 CL_METHODS = [:PAM, :KMEDOID, :KMEAN, :HIER_MIN, :HIER_MAX, :HIER_AVG, :DBSCAN]
 
 AGG_TYPES = (

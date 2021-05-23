@@ -2,7 +2,7 @@
 Data flow:
 
 1. Select dataset, clean
-2. Detect types and the ID field 
+2. Detect types and the ID field
 3. Aggregate by customer ID
 4. Calculate distances
 5. Clustering
@@ -27,7 +27,12 @@ State file
 """
 STF = "state.jld2"
 
-ID = (
+ID = (#
+    DT_SELECT="dt:select",
+    DT_PROCESSES="dt:processes",
+    DT_OUTPUT="dt:data",
+    DT_PROCESSES_OUTPUT="dt:processes-output",
+    # OLDCODE
     SIG_DATA="signal-data",
     DATA_PICKER="dataPicker",
     DATA="data",
@@ -37,6 +42,15 @@ ID = (
     DATA_PREVIEW="data-preview",
     dataDirectory=joinpath(@__DIR__, "..", "data"),
     # AGGREGATION
+    AG_UI="ag-ui",
+    AG_SELECT_ID="ag-select-id",
+    AG_AGS="ag-aggregations",
+    AG_ADD_BTN="ag-add-btn",
+    AG_SEL_COL="ag-select-column",
+    AG_SEL_TYPE="ag-select-type",
+    AG_SEL_AG="ag-select-aggregation",
+    AG_SEL_DEL="ag-select-delete",
+    # old AG
     AGG_MAIN_ID="agg-main-id",
     AGG_ROWS="agg-rows",
     AGG_ID_SELECTION="agg-id-select",
@@ -46,13 +60,19 @@ ID = (
     AGG_RESULT="aggregation-result",
     AGG="aggregation",
     # CLUSTERING
-	SIG_CL_DONE="cl-done",
+    SIG_CL_DONE="cl-done",
     CL_NCL="cl-num-cluster",
     CL_PLOT_X="cl-plot-x",
     CL_PLOT_Y="cl-plot-y",
     CL_SEL_MTH="cl-select-method",
     CL_RUN_BTN="cl-run",
     CL_PLOT="cl-plot",
+)
+
+SIG = (#
+    INIT="init",
+    POST_DATA_SEL="post:data-sel",
+    POST_CL="post:cl",
 )
 
 include("Process.jl")
@@ -63,14 +83,6 @@ include("Views.jl")
 using .Views
 include("Callbacks.jl")
 using .Callbacks
-
-function df2json(df::AbstractDataFrame)
-    return JSONTables.arraytable(df)
-end
-
-function json2df(jsonStr::AbstractString)
-    return DataFrame(JSONTables.jsontable(jsonStr))
-end
 
 include("dataPicker.jl")
 include("navigationBar.jl")
@@ -86,27 +98,32 @@ function quickCard(title, body)
 end
 
 function setup_layout!(app)
+    signals = map(propertynames(SIG)) do sig
+        html_div(; id=getproperty(SIG, sig), style=Dict("display" => "none"))
+    end
     return app.layout = html_div() do
         dbc_container() do
+            signals...,
+            #html_div() do
+            #    dbc_button("add"; id="add"),#
+            #    html_div(; id="test-add"),
+            #    html_div(; id="group-output")
+            #end,
             Views.states()...,
             html_h1("Sale DSS"),
             html_div(; className="divider"),
             html_h4("Choose dataset"),
             dbc_row() do
-                dbc_col(; width=5) do
-                    dbc_card() do
-                        dbc_cardheader("Input"),
-                        dbc_cardbody() do
-                            Views.dataPicker()
-                        end
-                    end
-                end,
-                dbc_col(; width=7) do
-                    Views.dataview()
-                end
+                [#
+                    dbc_col(Views.dt_input(); width=3),
+                    dbc_col(Views.dt_output(); width=9),
+                ]
             end,
             html_br(),
             html_h4("Data aggregate"),
+            html_div(; id=ID.AG_UI) do
+                Views.ag_input()
+            end,
             dbc_card() do
                 dbc_cardheader("Selection"),
                 dbc_cardbody() do

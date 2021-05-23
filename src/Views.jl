@@ -58,6 +58,7 @@ function rawDataFrame(df, nbrows=3)
         responsive=true,
     )
 end
+rawDF = rawDataFrame
 
 function dataPicker(id=ID.DATA_PICKER)
     datadir = joinpath(@__DIR__, "..", "data")
@@ -195,16 +196,72 @@ end
 
 function pl_scatter(df)
     gdf = groupby(df, 3)
-    data = [
-        (
-            x=clus.x,#
-            y=clus.y,
-            mode="markers",
-            marker=(size=5,),
-        ) for clus in gdf
-    ]
+    data = [(
+        x=clus.x,#
+        y=clus.y,
+        mode="markers",
+        marker=(size=5,),
+    ) for clus in gdf]
     #return plot(traces)
     return dcc_graph(; figure=(data=data, layout=(clickmode="event+select",)))
+end
+
+# DATA INPUT
+
+function dt_input()
+    # card body
+    body = [#
+        dbc_label("Select dataset"),
+        dbc_select(; id=ID.DT_SELECT),
+        html_br(),
+        dbc_label("Processes"),
+        dbc_checklist(;
+            id=ID.DT_PROCESSES,
+            switch=true,
+            options=[#
+                (label="Aggregate", value=0, checked=true),
+                (label="PCA", value=1, checked=false),
+                (label="Clustering", value=2, checked=false),
+            ],
+            value=[0, 2],
+        ),
+    ]
+
+    # The layout
+    dbc_card() do
+        [#
+            dbc_cardheader(),
+            dbc_cardbody(() -> body),
+        ]
+    end
+end
+
+function dt_output()
+    dbc_card() do
+        [#
+            dbc_cardheader("Info"),
+            dbc_cardbody() do
+                html_div(; id=ID.DT_OUTPUT)
+            end,
+        ]
+    end
+end
+
+# Aggregate
+
+function ag_input()
+    dbc_card() do
+        dbc_cardheader("Input"),
+        dbc_cardbody() do
+            dbc_formgroup([#
+                dbc_label("Main ID"),
+                dbc_select(; id=ID.AG_SELECT_ID),
+                dbc_label("Aggregations"),
+                dbc_button("Add"; id=ID.AG_ADD_BTN, color="primary"),
+                html_div(; id=ID.AG_AGS),
+            ])
+        end
+    end
 end
 
 # End module

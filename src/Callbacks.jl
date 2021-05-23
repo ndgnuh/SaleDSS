@@ -1,6 +1,6 @@
 module Callbacks
 
-using ..SaleDSS: ID, STF
+using ..SaleDSS: ID, STF, SIG
 using ..Views
 using ..Process
 using Dash
@@ -20,21 +20,139 @@ function loadingID(id)
     return "$(id)-loading"
 end
 
-function getTriggerID(ctx)
-    map(ctx.triggered) do trig
-        first(split(trig.prop_id, "."))
+callbacks = Dict{Symbol,Function}()
+
+# Initialize
+
+callbacks[:init] = function (app)
+    callback!(#
+        app,
+        Output(ID.DT_SELECT, "options"),
+        Input(SIG.INIT, "children"),
+    ) do _
+        datapath = normpath(joinpath(@__DIR__, "..", "data"))
+        datafiles = readdir(datapath)
+        datafiles = filter(endswith(".csv"), datafiles)
+        datapath = joinpath.(datapath, datafiles)
+        [(label=l, value=v) for (l, v) in zip(datafiles, datapath)]
     end
 end
 
-function df2json(df::AbstractDataFrame)
-    return JSONTables.arraytable(df)
+# Data & flower selection
+
+callbacks[:dt_input] = function (app)
+    callback!(#
+        app,
+        Output(ID.DT_OUTPUT, "children"),
+        Output(SIG.POST_DATA_SEL, "children"),
+        Input(ID.DT_SELECT, "value"),
+    ) do path
+        if isnothing(path)
+            return "", nothing
+        else
+            try
+                df = CSV.read(path, DataFrame)
+                jldopen(STF, "w") do f
+                    f["data"] = df
+                end
+                Views.rawDF(df, 3), ""
+            catch error
+                "Unable to read file: $(error)", nothing
+            end
+        end
+    end
 end
 
-function json2df(jsonStr::AbstractString)
-    return DataFrame(JSONTables.jsontable(jsonStr))
+#TODO
+#callbacks[:dt_process] = function(app)
+#end
+
+# aggregation
+
+callbacks[:ag_init] = function (app)
+    callback!(#
+        app,
+        Output(ID.AG_SELECT_ID, "options"),
+        Output(ID.AG_SELECT_ID, "value"),
+        Input(SIG.POST_DATA_SEL, "children"),
+    ) do sig
+        if !isfile(STF)
+            return [], nothing
+        else
+            data = jldopen(f -> f["data"], STF)
+            columns = names(data)
+            options = map(columns) do name
+                (value=name, label=name)
+            end
+            value = findfirst(occursin("id"), lowercase.(columns))
+            if isnothing(value)
+                options, nothing
+            else
+                options, options[value].value
+            end
+        end
+    end
 end
 
-callbacks = Dict{Symbol,Function}()
+callbacks[:ag_add] = function (app)
+    function add!(children, idx)
+        data = jldopen(f -> f["data"], STF)
+        columns = names(data)
+        sCol = dbc_select(;
+            id=(type=ID.AG_SEL_COL, index=idx),
+            options=[(label=c, value=c) for c in columns],
+        )
+        sType = dbc_select(;
+            id=(type=ID.AG_SEL_TYPE, index=idx),
+            options=[(label=t, value=t) for t in propertynames(Process.TYPES)],
+        )
+        sAgg = dbc_select(;
+            id=(type=ID.AG_SEL_AG, index=idx),
+            options=[(label=t, value=t) for t in propertynames(Process.AGG_TYPES)],
+        )
+        sDelete = dbc_button("delete"; color="danger", id=(type=ID.AG_SEL_DEL, index=idx))
+        s = html_div([
+            html_br(),
+            dbc_row([#
+                dbc_col(sCol),
+                dbc_col(sType),
+                dbc_col(sAgg),
+                dbc_col(sDelete),
+            ]),
+        ])
+        if isempty(children)
+            return [s]
+        else
+            push!(children, s)
+            children
+        end
+    end
+
+    function del!(children, idx)
+        deleteat!(children, idx)
+        return children
+    end
+    callback!(
+        app,#
+        Output(ID.AG_AGS, "children"),
+        Input(ID.AG_ADD_BTN, "n_clicks_timestamp"),
+        Input((type=ID.AG_SEL_DEL, index=ALL), "n_clicks_timestamp"),
+        Input(SIG.POST_DATA_SEL, "children"),
+        State(ID.AG_AGS, "children"),
+    ) do add_ts, del_tss, sig, children
+        if !isfile(STF)
+            return []
+        end
+        timestamps = something.([add_ts; del_tss...], 0)
+        _, maxidx = findmax(something.(timestamps, 0))
+        idx = length(something(children, [])) + 1
+        if something(maxidx, 1) > 1
+            del!(children, maxidx)
+        else
+            add!(children, idx)
+        end
+    end
+end
 
 callbacks[:pickdata] = function (app)
     callback!(app, Output(ID.SIG_DATA, "children"), Input(ID.DATA_PICKER, "value")) do bname
@@ -223,6 +341,33 @@ callbacks[:cl_done] = function (app)
             rename!(df, [:x, :y, :as])
             Views.pl_scatter(df)
         end
+    end
+end
+
+callbacks[:ex] = function (app)
+    callback!(
+        app,
+        Output("test-add", "children"),
+        Input("add", "n_clicks"),
+        State("test-add", "children"),
+    ) do _, children
+        options = Views.genOptions(rand(-3:3, 5))
+        s = dbc_select(; options=options, id=(type="Added_", index=ALL))
+        @show children
+        if isnothing(children)
+            return [s]
+        else
+            push!(children, s)
+            children
+        end
+    end
+
+    callback!(
+        app,
+        Output("group-output", "children"),
+        Input((type="Added_", index=ALL), "value"),
+    ) do values
+        string(values)
     end
 end
 
