@@ -154,17 +154,8 @@ function aggregationResult()
     end
 end
 
-function cl_UI()
-    dbc_card() do
-        dbc_cardheader("Clustering Input"),
-        dbc_cardbody() do
-            cl_Input(), html_br(), cl_Output()
-        end
-    end
-end
-
-function cl_Input()
-    return html_div() do
+function cl_input()
+    body = dbc_formgroup([#
         dbc_label("Number of cluster"),
         dbc_input(; type="number", value=3, id=ID.CL_NCL),
         dbc_label("Clustering method"),
@@ -172,22 +163,30 @@ function cl_Input()
             options=genOptions(Process.CL_METHODS),
             id=ID.CL_SEL_MTH,
         ),
-        html_div() do
-            dbc_button("Cluster"; id=ID.CL_RUN_BTN, color="primary")
-        end
+        dbc_label("Plot X axis"),
+        dbc_select(; id=ID.CL_PLOT_X),
+        dbc_label("Plot Y axis"),
+        dbc_select(; id=ID.CL_PLOT_Y),
+        dbc_label("Run:"),
+        html_div(
+            dbc_buttongroup(
+                [
+                    dbc_button("Elbow"; id=ID.CL_ELBOW_BTN, color="primary")
+                    dbc_button("Cluster"; id=ID.CL_RUN_BTN, color="primary")
+                ],
+            ),
+        ),
+    ])
+    dbc_card() do
+        dbc_cardheader("Input"), dbc_cardbody(body)
     end
 end
 
-function cl_Output()
+function cl_output()
     dbc_card() do
-        dbc_cardheader("Clustering output"),
+        dbc_cardheader("Output"),
         dbc_cardbody() do
-            dbc_label("X axis column"),
-            dbc_select(; id=ID.CL_PLOT_X),
-            dbc_label("Y axis column"),
-            dbc_select(; id=ID.CL_PLOT_Y),
-            dbc_label("Result plot"),
-            html_div(; id=ID.CL_PLOT)
+            dbc_label("Result plot"), html_div(; id=ID.CL_PLOT)
         end
     end
 end
@@ -255,11 +254,20 @@ function ag_input()
         dbc_cardbody() do
             dbc_formgroup([#
                 dbc_label("Main ID"),
-                dbc_select(; id=ID.AG_SELECT_ID),
+                dbc_select(; id=ID.AG_SEL_ID),
                 dbc_label("Aggregations"),
                 dbc_button("Add"; id=ID.AG_ADD_BTN, color="primary"),
                 html_div(; id=ID.AG_AGS),
             ])
+        end
+    end
+end
+
+function ag_output()
+    dbc_card() do
+        dbc_cardheader("Output"),
+        dbc_cardbody() do
+            html_div(; id=ID.AG_OUTPUT)
         end
     end
 end

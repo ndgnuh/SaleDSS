@@ -43,13 +43,14 @@ ID = (#
     dataDirectory=joinpath(@__DIR__, "..", "data"),
     # AGGREGATION
     AG_UI="ag-ui",
-    AG_SELECT_ID="ag-select-id",
     AG_AGS="ag-aggregations",
     AG_ADD_BTN="ag-add-btn",
+    AG_SEL_ID="ag-select-id",
     AG_SEL_COL="ag-select-column",
     AG_SEL_TYPE="ag-select-type",
     AG_SEL_AG="ag-select-aggregation",
     AG_SEL_DEL="ag-select-delete",
+    AG_OUTPUT="ag-output",
     # old AG
     AGG_MAIN_ID="agg-main-id",
     AGG_ROWS="agg-rows",
@@ -66,6 +67,7 @@ ID = (#
     CL_PLOT_Y="cl-plot-y",
     CL_SEL_MTH="cl-select-method",
     CL_RUN_BTN="cl-run",
+    CL_ELBOW_BTN="cl-run-elbow",
     CL_PLOT="cl-plot",
 )
 
@@ -73,6 +75,7 @@ SIG = (#
     INIT="init",
     POST_DATA_SEL="post:data-sel",
     POST_CL="post:cl",
+    POST_AG="post-ag",
 )
 
 include("Process.jl")
@@ -90,12 +93,6 @@ include("dataView.jl")
 include("cleaning.jl")
 include("plots.jl")
 include("draft.jl")
-
-function quickCard(title, body)
-    dbc_card() do
-        dbc_cardheader(title), dbc_cardbody(body)
-    end
-end
 
 function setup_layout!(app)
     signals = map(propertynames(SIG)) do sig
@@ -121,22 +118,20 @@ function setup_layout!(app)
             end,
             html_br(),
             html_h4("Data aggregate"),
-            html_div(; id=ID.AG_UI) do
-                Views.ag_input()
-            end,
-            dbc_card() do
-                dbc_cardheader("Selection"),
-                dbc_cardbody() do
-                    Views.aggregationView()
-                end
-            end,
-            html_br(),
-            Views.aggregationResult(),
+            html_div([#
+                Views.ag_input(),
+                html_br(),
+                Views.ag_output(),
+            ]; id=ID.AG_UI),
 
             # CLEAN & CLUSTERING
             html_br(),
             html_h4("Clustering"),
-            Views.cl_UI()
+            html_div([#
+                Views.cl_input(),
+                html_br(),
+                Views.cl_output(),
+            ])
         end
     end
 end
