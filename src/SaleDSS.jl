@@ -145,7 +145,12 @@ function main()
     Callbacks.setupCallbacks!(app)
     host = get(ENV, "HOST", "0.0.0.0")
     port = get(ENV, "PORT", "8080")
-    return run_server(app, "0.0.0.0", 8080; debug=true)
+    debug = if get(ENV, "DEBUG", "false") == "true"
+        true
+    else
+        false
+    end
+    return run_server(app, "0.0.0.0", 8080; debug=debug)
 end
 
 function main_with_try_catch()

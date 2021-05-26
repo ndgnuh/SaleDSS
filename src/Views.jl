@@ -68,7 +68,12 @@ function dataPicker(id=ID.DATA_PICKER)
     options = map(files) do file
         Dict("label" => file, "value" => file)
     end
-    return (dbc_label("Select dataset"), dbc_select(; id=id, options=options))
+    return html_div(
+        [
+            dbc_label("Select dataset")
+            dcc_loading(dbc_select(; id=id, options=options))
+        ],
+    )
 end
 
 function dataview(dataID=ID.DATA, previewID=ID.DATA_PREVIEW)
@@ -187,9 +192,10 @@ end
 function cl_output()
     dbc_card() do
         dbc_cardheader("Output"),
-        dbc_cardbody() do
-            dbc_label("Result plot"), html_div(; id=ID.CL_PLOT)
-        end
+        dbc_cardbody([
+            dbc_label("Result plot")
+            dbc_spinner(html_div(""; id=ID.CL_PLOT))
+        ])
     end
 end
 
@@ -227,9 +233,9 @@ end
 function dt_output()
     dbc_card() do
         [#
-            dbc_cardheader("Info"),
+            dbc_cardheader("Preview"),
             dbc_cardbody() do
-                html_div(; id=ID.DT_OUTPUT)
+                dcc_loading(html_div(; id=ID.DT_OUTPUT))
             end,
         ]
     end
