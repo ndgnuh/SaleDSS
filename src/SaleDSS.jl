@@ -27,7 +27,10 @@ State file
 """
 STF = "state.jld2"
 
+state = Dict()
+
 ID = (#
+    CLEAR_CACHE="clear-cache",
     DT_SELECT="dt:select",
     DT_PROCESSES="dt:processes",
     DT_OUTPUT="dt:data",
@@ -95,54 +98,56 @@ include("plots.jl")
 include("draft.jl")
 
 function setup_layout!(app)
-    signals = map(propertynames(SIG)) do sig
-        html_div(; id=getproperty(SIG, sig), style=Dict("display" => "none"))
-    end
-    return app.layout = html_div() do
-        dbc_container() do
-            signals...,
+    return app.layout = dbc_container(
+        [
             #html_div() do
             #    dbc_button("add"; id="add"),#
             #    html_div(; id="test-add"),
             #    html_div(; id="group-output")
             #end,
-            Views.states()...,
-            html_h1("Sale DSS"),
-            html_div(; className="divider"),
-            html_h4("Choose dataset"),
-            dbc_row() do
+            html_div(Views.states())
+            html_h1("Sale DSS")
+            html_div(; className="divider")
+            html_div(
+                [
+                    html_h4("Choose dataset")
+                    dbc_row() do
+                        [#
+                            dbc_col(Views.dt_input(); width=3)
+                            dbc_col(Views.dt_output(); width=9)
+                        ]
+                    end
+                ],
+            )
+            html_br()
+            html_h4("Data aggregate")
+            html_div(
                 [#
-                    dbc_col(Views.dt_input(); width=3),
-                    dbc_col(Views.dt_output(); width=9),
-                ]
-            end,
-            html_br(),
-            html_h4("Data aggregate"),
-            html_div([#
-                Views.ag_input(),
-                html_br(),
-                Views.ag_output(),
-            ]; id=ID.AG_UI),
+                    Views.ag_input()
+                    html_br()
+                    Views.ag_output()
+                ];
+                id=ID.AG_UI,
+            )
 
             # CLEAN & CLUSTERING
-            html_br(),
-            html_h4("Clustering"),
+            html_br()
+            html_h4("Clustering")
             html_div([#
-                Views.cl_input(),
-                html_br(),
-                Views.cl_output(),
+                Views.cl_input()
+                html_br()
+                Views.cl_output()
             ])
-        end
-    end
+        ],
+        ;
+        id="init",
+    )
 end
 
 function main()
-    app = dash(;
-        external_stylesheets=[dbc_themes.DARKLY], suppress_callback_exceptions=true
-    )
+    app = dash(; external_stylesheets=[dbc_themes.DARKLY])
     setup_layout!(app)
-    #setup_callback!(app)
-    Callbacks.setupCallbacks!(app)
+    Callbacks.setupCallbacks!(app, state)
     host = get(ENV, "HOST", "0.0.0.0")
     port = get(ENV, "PORT", "8080")
     debug = if get(ENV, "DEBUG", "false") == "true"

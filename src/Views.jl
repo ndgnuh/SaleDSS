@@ -185,7 +185,7 @@ function cl_output()
         dbc_cardheader("Output"),
         dbc_cardbody([
             dbc_label("Result plot")
-            dbc_spinner(html_div(""; id=ID.CL_PLOT))
+            dcc_loading(html_div(""; id=ID.CL_PLOT))
         ])
     end
 end
@@ -196,18 +196,13 @@ function dt_input()
     # card body
     body = [#
         dbc_label("Select dataset"),
-        dbc_select(; id=ID.DT_SELECT),
-        html_br(),
-        dbc_checklist(;
-            style=Dict("display" => "none"),
-            id=ID.DT_PROCESSES,
-            switch=true,
-            options=[#
-                (label="Aggregate", value=0, checked=true),
-                (label="PCA", value=1, checked=false),
-                (label="Clustering", value=2, checked=false),
-            ],
-            value=[0, 2],
+        dcc_loading(; children=dbc_select(; id=ID.DT_SELECT)),
+        dbc_cardlink(#
+            html_a(
+                "Clear cache";#
+                href="javascript:void(0)",
+                id=ID.CLEAR_CACHE,
+            ),
         ),
     ]
 
@@ -225,7 +220,7 @@ function dt_output()
         [#
             dbc_cardheader("Preview"),
             dbc_cardbody() do
-                dcc_loading(html_div(; id=ID.DT_OUTPUT); id="loading-" * ID.DT_OUTPUT)
+                html_div([dcc_loading(; children=html_div(; id=ID.DT_OUTPUT))])
             end,
         ]
     end
@@ -239,10 +234,10 @@ function ag_input()
         dbc_cardbody() do
             dbc_formgroup([#
                 dbc_label("Main ID"),
-                dbc_select(; id=ID.AG_SEL_ID),
+                dcc_loading(dbc_select(; id=ID.AG_SEL_ID)),
                 dbc_label("Aggregations"),
                 dbc_button("Add"; id=ID.AG_ADD_BTN, color="primary"),
-                html_div(; id=ID.AG_AGS),
+                dcc_loading(html_div(; id=ID.AG_AGS)),
             ])
         end
     end
@@ -252,7 +247,7 @@ function ag_output()
     dbc_card() do
         dbc_cardheader("Output"),
         dbc_cardbody() do
-            html_div(; id=ID.AG_OUTPUT)
+            dcc_loading(html_div(; id=ID.AG_OUTPUT))
         end
     end
 end

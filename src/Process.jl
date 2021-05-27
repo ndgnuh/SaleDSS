@@ -13,26 +13,47 @@ ACTS = [:Aggregate, :PCA, :CLUS]
 
 CL_METHODS = [:PAM, :KMEDOID, :KMEAN, :DBSCAN]
 
-count_unique(x) = length(unique(x))
+function deviation(X::AbstractVector{T}) where {T<:Number}
+    return std(X)
+end
+function deviation(X::CategoricalArray)
+    X = levelcode.(X)
+    return std(X)
+end
+function deviation(X::AbstractVector)
+    return deviation(categorical(X))
+end
+
+function count_unique(x)
+    return length(unique(x))
+end
+
 AGG_TYPES = (
     MEAN=mean, #
     SUM=sum, #
-    STD=std, #
+    STD=deviation, #
     MAX=maximum, #
     MIN=minimum, #
     COUNT=count_unique, #
     MODE=mode,
-    SKIP=nothing,
 )
 
-TYPES = (
-    NUMERIC=:Numeric,
-    CATEGORICAL=:Categorical,
-    HIERARCHICAL=:Hierarchical,
-    DATETIME=:DateTime,
-    ID=:ID,
-    SKIP=:SKIP,
-)
+TYPES = (NUMERIC=:Numeric, CATEGORICAL=:Categorical, HIERARCHICAL=:Hierarchical)
+
+function type_to_scitype(::Type{T}) where {T<:Number}
+    return [:NUMERIC, :CATEGORICAL, :HIERARCHICAL]
+end
+function type_to_scitype(::Type{T}) where {T}
+    return [:CATEGORICAL, :HIERARCHICAL]
+end
+
+function scitype_agg(scitype)
+    if scitype === "NUMERIC"
+        [:MEAN, :SUM, :STD, :MAX, :MIN, :COUNT, :MODE]
+    else
+        [:STD, :MAX, :MIN, :COUNT, :MODE]
+    end
+end
 
 """
 	calculateDistance(df, columns, distanceType)

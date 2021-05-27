@@ -1,6 +1,6 @@
 module Callbacks
 
-using ..SaleDSS: ID, STF, SIG
+using ..SaleDSS: ID, SIG
 using ..Views
 using ..Process
 using Dash
@@ -25,41 +25,46 @@ callbacks = Dict{Symbol,Function}()
 
 # Initialize
 
-callbacks[:init] = function (app)
+callbacks[:init] = function (app, state)
     callback!(#
         app,
         Output(ID.DT_SELECT, "options"),
-        Input(SIG.INIT, "children"),
-    ) do _
+        Output(ID.DT_SELECT, "value"),
+        Input(ID.CLEAR_CACHE, "n_clicks"),
+    ) do n
+        for k in keys(state)
+            delete!(state, k)
+        end
         datapath = normpath(joinpath(@__DIR__, "..", "data"))
         datafiles = readdir(datapath)
         datafiles = filter(endswith(".csv"), datafiles)
         datapath = joinpath.(datapath, datafiles)
-        [(label=l, value=v) for (l, v) in zip(datafiles, datapath)]
+        state[:list_data_file] = Dict(datafiles .=> datapath)
+        delete!(state, :data)
+        [(label=l, value=v) for (l, v) in zip(datafiles, datapath)], nothing
     end
 end
 
 # Data & flower selection
 
-callbacks[:dt_input] = function (app)
+callbacks[:dt_input] = function (app, state)
     callback!(#
         app,
         Output(ID.DT_OUTPUT, "children"),
-        Output(SIG.POST_DATA_SEL, "children"),
         Input(ID.DT_SELECT, "value"),
     ) do path
         if isnothing(path)
-            return "", nothing
+            return ""
         else
-            sleep(5)
             try
                 df = CSV.read(path, DataFrame)
-                jldopen(STF, "w") do f
-                    f["data"] = df
-                end
+                state[:data] = df
+                state[:dataset] = path
+                delete!(state, :aggdata)
+                delete!(state, :dists)
                 Views.rawDF(df, 3), ""
             catch error
-                "Unable to read file: $(error)", nothing
+                "Unable to read file: $(error)"
             end
         end
     end
@@ -71,17 +76,17 @@ end
 
 # aggregation
 
-callbacks[:ag_init] = function (app)
+callbacks[:ag_init] = function (app, state)
     callback!(#
         app,
         Output(ID.AG_SEL_ID, "options"),
         Output(ID.AG_SEL_ID, "value"),
-        Input(SIG.POST_DATA_SEL, "children"),
+        Input(ID.DT_OUTPUT, "children"),
     ) do sig
-        if !isfile(STF)
+        if !haskey(state, :data)
             return [], nothing
         else
-            data = jldopen(f -> f["data"], STF)
+            data = state[:data]
             columns = names(data)
             options = map(columns) do name
                 (value=name, label=name)
@@ -98,18 +103,15 @@ callbacks[:ag_init] = function (app)
     end
 end
 
-callbacks[:ag_add] = function (app)
+callbacks[:ag_add] = function (app, state)
     function add!(children, idx)
-        data = jldopen(f -> f["data"], STF)
+        data = state[:data]
         columns = names(data)
         sCol = dbc_select(;
             id=(type=ID.AG_SEL_COL, index=idx),
             options=[(label=c, value=c) for c in columns],
         )
-        sType = dbc_select(;
-            id=(type=ID.AG_SEL_TYPE, index=idx),
-            options=[(label=t, value=t) for t in propertynames(Process.TYPES)],
-        )
+        sType = dbc_select(; id=(type=ID.AG_SEL_TYPE, index=idx), options=[])
         sAgg = dbc_select(;
             id=(type=ID.AG_SEL_AG, index=idx),
             options=[(label=t, value=t) for t in propertynames(Process.AGG_TYPES)],
@@ -141,10 +143,10 @@ callbacks[:ag_add] = function (app)
         Output(ID.AG_AGS, "children"),
         Input(ID.AG_ADD_BTN, "n_clicks_timestamp"),
         Input((type=ID.AG_SEL_DEL, index=ALL), "n_clicks_timestamp"),
-        Input(SIG.POST_DATA_SEL, "children"),
+        Input(ID.DT_OUTPUT, "children"),
         State(ID.AG_AGS, "children"),
     ) do add_ts, del_tss, sig, children
-        if !isfile(STF)
+        if !haskey(state, :data)
             return []
         end
         timestamps = something.([add_ts; del_tss...], 0)
@@ -158,74 +160,106 @@ callbacks[:ag_add] = function (app)
     end
 end
 
-callbacks[:ag_output] = function (app)
+callbacks[:ag_scitype] = function (app, state)
+    return callback!(
+        app,
+        Output((type=ID.AG_SEL_TYPE, index=MATCH), "options"),
+        Output((type=ID.AG_SEL_TYPE, index=MATCH), "value"),
+        Input(ID.DT_OUTPUT, "children"),
+        Input(ID.AG_AGS, "children"),
+        Input((type=ID.AG_SEL_COL, index=MATCH), "value"),
+    ) do _, _, col
+        if haskey(state, :data) && !isnothing(col)
+            data = state[:data]
+            T = eltype(data[:, col])
+            types = Process.type_to_scitype(T)
+            @show types
+            [(value=t, label=t) for t in types], first(types)
+        else
+            [], nothing
+        end
+    end
+end
+
+callbacks[:ag_scitype2agg] = function (app, state)
+    return callback!(#
+        app,
+        Output((type=ID.AG_SEL_AG, index=MATCH), "options"),
+        Output((type=ID.AG_SEL_AG, index=MATCH), "value"),
+        Input(ID.DT_OUTPUT, "children"),
+        Input((type=ID.AG_SEL_TYPE, index=MATCH), "value"),
+    ) do _, type
+        if isnothing(type)
+            [], nothing
+        else
+            aggs = Process.scitype_agg(type)
+            [(label=a, value=a) for a in aggs], first(aggs)
+        end
+    end
+end
+
+callbacks[:ag_output] = function (app, state)
     callback!(
         app,
         Output(ID.AG_OUTPUT, "children"),
-        Output(SIG.POST_AG, "children"),
-        Input(SIG.POST_DATA_SEL, "children"),
+        Input(ID.DT_OUTPUT, "children"),
         Input(ID.AG_SEL_ID, "value"),
         Input((type=ID.AG_SEL_COL, index=ALL), "value"),
         Input((type=ID.AG_SEL_TYPE, index=ALL), "value"),
         Input((type=ID.AG_SEL_AG, index=ALL), "value"),
     ) do _, id, columns, scitypes, aggs
-        if !isfile(STF) ||
-           isnothing(id) ||
+        if isnothing(id) ||
+           !haskey(state, :data) ||
            any(isnothing.(columns)) ||
            any(isnothing.(scitypes)) ||
-           any(isnothing.(aggs))
-            return "", ""
+           any(isnothing.(aggs)) ||
+           !(length(columns) == length(scitypes) == length(aggs))
+            return ""
         end
         # perform cleaning & stuffs here
-        aggregations = map(aggs) do agg
-            getproperty(Process.AGG_TYPES, Symbol(agg))
-        end
         aggregations = map(1:length(columns)) do i
             col = Symbol(columns[i])
             agg = getproperty(Process.AGG_TYPES, Symbol(aggs[i]))
             col => agg
         end
+        aggregations = unique(aggregations)
 
         # aggregate
-        df = jldopen(f -> f["data"], STF)
+        df = state[:data]
         aggdf = combine(groupby(df, id), aggregations...)
 
         # Convert column to correct type
-        map(2:size(aggdf, 2)) do i
+        for i in 2:size(aggdf, 2)
             st = getproperty(Process.TYPES, Symbol(scitypes[i - 1]))
             if st === Process.TYPES.HIERARCHICAL
-                X = categorical(aggdf[:, i])
+                X = categorical((aggdf[:, i]))
                 ordered!(X, true)
                 aggdf[:, i] = X
-            else
-                aggdf[:, i] = categorical(aggdf[:, i])
+            elseif st === Process.TYPES.CATEGORICAL
+                aggdf[:, i] = categorical((aggdf[:, i]))
             end
         end
-        jldopen(STF, "a") do f
-            delete!(f, "aggdata")
-            delete!(f, "dists")
-            f["aggdata"] = aggdf
-        end
-        return (Views.rawDF(aggdf, 5), "")
+        state[:aggdata] = aggdf
+        delete!(state, :dists)
+        return Views.rawDF(aggdf, 5)
     end
 end
 
 # CLUSTERING
 
-callbacks[:cl_init] = function (app)
+callbacks[:cl_init] = function (app, state)
     callback!(#
         app,
         Output(ID.CL_PLOT_X, "options"),
         Output(ID.CL_PLOT_Y, "options"),
         Output(ID.CL_PLOT_X, "value"),
         Output(ID.CL_PLOT_Y, "value"),
-        Input(SIG.POST_AG, "children"),
         Input(ID.AG_OUTPUT, "children"),
-    ) do sig, c
-        if !isfile(STF) || isempty(c)
+    ) do c
+        if isempty(c) || !haskey(state, :aggdata)
             return [], [], nothing, nothing
         end
-        aggdata = jldopen(f -> get(f, "aggdata", nothing), STF)
+        aggdata = state[:aggdata]
         columns = names(aggdata)
         options = [(value=c, label=c) for c in columns]
         value = get(columns, 1, nothing)
@@ -233,7 +267,7 @@ callbacks[:cl_init] = function (app)
     end
 end
 
-callbacks[:cl_run] = function (app)
+callbacks[:cl_run] = function (app, state)
     function elbow(mth, dists)
         results = map(1:9) do k
             try
@@ -261,22 +295,20 @@ callbacks[:cl_run] = function (app)
         State(ID.CL_PLOT_X, "value"),
         State(ID.CL_PLOT_Y, "value"),
     ) do single_ts, elbow_ts, id, ncl, mth, colx, coly
-        if !isfile(STF) || isnothing(colx) || isnothing(coly)
+        if isnothing(colx) || isnothing(coly) || !haskey(state, :aggdata)
             return ""
         end
-        f = jldopen(STF, "a")
-        data = f["aggdata"]
+        data = state[:aggdata]
         columns = names(data)
         # validate cache
         if !(colx in columns && coly in columns)
-            delete!(f, "dists")
+            delete!(state, :dists)
         end
         # cache distance
-        if !haskey(f, "dists")
-            f["dists"] = Process.gower(select(data, Not(id)))
+        if !haskey(state, :dists)
+            state[:dists] = Process.gower(select(data, Not(id)))
         end
-        dists = f["dists"]
-        close(f)
+        dists = state[:dists]
         if something(single_ts, 0) > something(elbow_ts, 9)
             result = if mth == "KMEAN"
                 values, columns = Process.numeric_value(data)
@@ -325,9 +357,9 @@ end
 #    end
 #end
 
-function setupCallbacks!(app)
+function setupCallbacks!(app, state)
     for (_, setCallback!) in callbacks
-        setCallback!(app)
+        setCallback!(app, state)
     end
     return app
 end
