@@ -14,6 +14,8 @@ using DataFrames
 using Plots
 using JLD2
 using CategoricalArrays
+using Clustering
+using PAM
 
 function loadingID(id)
     return "$(id)-loading"
@@ -49,6 +51,7 @@ callbacks[:dt_input] = function (app)
         if isnothing(path)
             return "", nothing
         else
+            sleep(5)
             try
                 df = CSV.read(path, DataFrame)
                 jldopen(STF, "w") do f
@@ -275,8 +278,23 @@ callbacks[:cl_run] = function (app)
         dists = f["dists"]
         close(f)
         if something(single_ts, 0) > something(elbow_ts, 9)
-            result = single(mth, dists, ncl)
-            Views.single_plot(result, data[!, colx], data[!, coly])
+            result = if mth == "KMEAN"
+                values, columns = Process.numeric_value(data)
+                oldcolumns = names(data)
+                columns = [columns; setdiff(oldcolumns, columns)]
+                @show columns
+                result = kmeans(transpose(values), ncl)
+                Views.plot_result(result, select(data, columns), colx, coly)
+            elseif mth == "KMEDOID"
+                result = kmedoids(dists, ncl)
+                Views.plot_result(result, data, colx, coly)
+            elseif mth == "PAM"
+                result = pam(dists, ncl)
+                Views.plot_result(result, data, colx, coly)
+            else
+                return "??"
+            end
+            #Views.single_plot(result, data[!, colx], data[!, coly])
         else
             result = elbow(mth, dists)
             Views.elbow_plot(result)

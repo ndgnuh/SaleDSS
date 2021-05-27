@@ -51,12 +51,26 @@ end
 function gower(X::AbstractVector{T}) where {T<:Number}
     X = (X .- mean(X)) / std(X)
     r = abs(maximum(X) - minimum(X))
-    return map(Iterators.product(X, X)) do (xi, xj)
+    dists = map(Iterators.product(X, X)) do (xi, xj)
         Float32(abs(xi - xj) / r)
     end
+    return dists = dists / std(dists)
+end
+function gower(X::CategoricalVector)
+    codes = levelcode.(X)
+    if isordered(X)
+        dists = map(Iterators.product(codes, codes)) do (xi, xj)
+            abs(xi - xj)
+        end
+    else
+        dists = map(Iterators.product(codes, codes)) do (xi, xj)
+            xi == xj ? 1 : 0
+        end
+    end
+    return dists / std(dists)
 end
 function gower(X::AbstractVector)
-    map(Iterators.product(X, X)) do (xi, xj)
+    return dists = map(Iterators.product(X, X)) do (xi, xj)
         (xi == xj ? 1 : 0)
     end
 end
@@ -67,22 +81,44 @@ function gower(df::AbstractDataFrame)
 end
 
 #TODO: add more aggregation
-function cluster(mth, dists, k)
+function cluster(mth, args...)
     if mth === "KMEDOID"
+        dists, k = args
         kmedoids(dists, k)
     elseif mth === "PAM"
+        dists, k = args
         pam(dists, k)
     elseif mth === "KMEAN"
-        kmeans(dists, k)
-    elseif mth === "HIER_MIN"
-        hclust(dists, :single)
-    elseif mth === "HIER_MAX"
-        hclust(dists, :complete)
-    elseif mth === "HIER_AVG"
-        hclust(dists, :average)
-    elseif mth === "DBSCAN"
-        dbscan(dists / std(dists), 0.05, 5)
+        X, k = args
+        kmeans(X, k)
     end
+end
+
+function cluster_weight(df::AbstractDataFrame)
+    @assert ("assignments" in names(df)) "DataFrame has no assignments column"
+    gdf = groupby(df, :assignments)
+    return aggregate = map(setdiff(names(df), ["assignments"])) do name
+        Symbol(name) => mean
+    end
+end
+
+function numeric_value(df::AbstractDataFrame)
+    columns = names(df)
+    columns = filter(columns) do c
+        eltype(df[!, c]) <: Union{Number,CategoricalValue}
+    end
+    values = map(columns) do c
+        cvals = df[!, c]
+        if eltype(cvals) <: Number
+            cvals
+        elseif eltype(cvals) <: CategoricalValue
+            levelcode.(cvals)
+        else
+            nothing
+        end
+    end
+    values = filter(!isnothing, values)
+    return reduce(hcat, values), columns
 end
 
 end
