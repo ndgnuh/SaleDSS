@@ -56,7 +56,11 @@ function plot_result(r::Union{KmeansResult,KmedoidsResult,PamResult}, X, i, j; k
             )
         end for c in clusters
     ]
-    p = plot([traces; ctrace])
+    layout = Layout(#
+        xaxis_title_text=i,
+        yaxis_title_text=j,
+    )
+    p = plot([traces; ctrace], layout)
     return graph(p; kwargs...)
 end
 

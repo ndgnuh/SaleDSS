@@ -13,13 +13,14 @@ ACTS = [:Aggregate, :PCA, :CLUS]
 
 CL_METHODS = [:PAM, :KMEDOID, :KMEAN, :DBSCAN]
 
+count_unique(x) = length(unique(x))
 AGG_TYPES = (
     MEAN=mean, #
     SUM=sum, #
     STD=std, #
     MAX=maximum, #
     MIN=minimum, #
-    COUNT=length, #
+    COUNT=count_unique, #
     MODE=mode,
     SKIP=nothing,
 )

@@ -36,12 +36,6 @@ function states()
     ]
 end
 
-function loading(id)
-    return html_div(; id=id) do
-        dbc_spinner(; color="primary"), "Loading..."
-    end
-end
-
 function loadingWidget()
     return dbc_spinner(; color="primary")
 end
@@ -72,18 +66,15 @@ function dataPicker(id=ID.DATA_PICKER)
         [
             dbc_label("Select dataset")
             dcc_loading(dbc_select(; id=id, options=options))
-        ],
+        ]
     )
 end
 
-function dataview(dataID=ID.DATA, previewID=ID.DATA_PREVIEW)
+function dataview()
     return view = dbc_card() do
         dbc_cardheader("Data preview"),
         dbc_cardbody() do
-            html_div()
-            html_div(; id="$previewID") do
-                loadingWidget()
-            end
+            dcc_loading(html_div(; id=ID.DATA_PREVIEW))
         end
     end
 end
@@ -207,7 +198,6 @@ function dt_input()
         dbc_label("Select dataset"),
         dbc_select(; id=ID.DT_SELECT),
         html_br(),
-        dbc_label("Processes"),
         dbc_checklist(;
             style=Dict("display" => "none"),
             id=ID.DT_PROCESSES,
@@ -235,7 +225,7 @@ function dt_output()
         [#
             dbc_cardheader("Preview"),
             dbc_cardbody() do
-                dcc_loading(html_div(; id=ID.DT_OUTPUT))
+                dcc_loading(html_div(; id=ID.DT_OUTPUT); id="loading-" * ID.DT_OUTPUT)
             end,
         ]
     end
