@@ -51,12 +51,12 @@ function plot_result(r::Union{KmeansResult,KmedoidsResult,PamResult}, X, i, j; k
         begin
             scatter(;#
                 mode="markers",
-                x=X[r.assignments .== c, i],
-                y=X[r.assignments .== c, j],
+                x=X[!, i][r.assignments .== c],
+                y=X[!, j][r.assignments .== c],
             )
         end for c in clusters
     ]
-    layout = Layout(#
+    layout = Layout(#;
         xaxis_title_text=i,
         yaxis_title_text=j,
     )

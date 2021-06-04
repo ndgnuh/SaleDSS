@@ -16,6 +16,7 @@ using JLD2
 using CategoricalArrays
 using Clustering
 using PAM
+using JSONTables
 
 function loadingID(id)
     return "$(id)-loading"
@@ -31,16 +32,11 @@ callbacks[:init] = function (app, state)
         Output(ID.DT_SELECT, "options"),
         Output(ID.DT_SELECT, "value"),
         Input(ID.CLEAR_CACHE, "n_clicks"),
-    ) do n
-        for k in keys(state)
-            delete!(state, k)
-        end
+    ) do _
         datapath = normpath(joinpath(@__DIR__, "..", "data"))
         datafiles = readdir(datapath)
         datafiles = filter(endswith(".csv"), datafiles)
         datapath = joinpath.(datapath, datafiles)
-        state[:list_data_file] = Dict(datafiles .=> datapath)
-        delete!(state, :data)
         [(label=l, value=v) for (l, v) in zip(datafiles, datapath)], nothing
     end
 end
@@ -50,7 +46,7 @@ end
 callbacks[:dt_input] = function (app, state)
     callback!(#
         app,
-        Output(ID.DT_OUTPUT, "children"),
+        Output(ID.DT_STORE, "data"),
         Input(ID.DT_SELECT, "value"),
     ) do path
         if isnothing(path)
@@ -58,14 +54,22 @@ callbacks[:dt_input] = function (app, state)
         else
             try
                 df = CSV.read(path, DataFrame)
-                state[:data] = df
-                state[:dataset] = path
-                delete!(state, :aggdata)
-                delete!(state, :dists)
-                Views.rawDF(df, 3), ""
+                objecttable(df)
             catch error
-                "Unable to read file: $(error)"
+                @error "Unable to read file: $(error)"
+                return nothing
             end
+        end
+    end
+end
+
+callbacks[:dt_input_preview] = function (app, state)
+    callback!(app, Output(ID.DT_OUTPUT, "children"), Input(ID.DT_STORE, "data")) do datastr
+        if isempty(something(datastr, ""))
+            nothing
+        else
+            df = DataFrame(jsontable(datastr))
+            Views.rawDF(df, 3)
         end
     end
 end
@@ -81,12 +85,12 @@ callbacks[:ag_init] = function (app, state)
         app,
         Output(ID.AG_SEL_ID, "options"),
         Output(ID.AG_SEL_ID, "value"),
-        Input(ID.DT_OUTPUT, "children"),
-    ) do sig
-        if !haskey(state, :data)
+        Input(ID.DT_STORE, "data"),
+    ) do datajson
+        if isempty(datajson)
             return [], nothing
         else
-            data = state[:data]
+            data = DataFrame(jsontable(datajson))
             columns = names(data)
             options = map(columns) do name
                 (value=name, label=name)
@@ -104,8 +108,7 @@ callbacks[:ag_init] = function (app, state)
 end
 
 callbacks[:ag_add] = function (app, state)
-    function add!(children, idx)
-        data = state[:data]
+    function add!(data, children, idx)
         columns = names(data)
         sCol = dbc_select(;
             id=(type=ID.AG_SEL_COL, index=idx),
@@ -134,7 +137,7 @@ callbacks[:ag_add] = function (app, state)
         end
     end
 
-    function del!(children, idx)
+    function del!(_, children, idx)
         deleteat!(children, idx)
         return children
     end
@@ -143,19 +146,25 @@ callbacks[:ag_add] = function (app, state)
         Output(ID.AG_AGS, "children"),
         Input(ID.AG_ADD_BTN, "n_clicks_timestamp"),
         Input((type=ID.AG_SEL_DEL, index=ALL), "n_clicks_timestamp"),
-        Input(ID.DT_OUTPUT, "children"),
+        Input(ID.DT_STORE, "data"),
+        Input(ID.DT_STORE, "modified_timestamp"),
         State(ID.AG_AGS, "children"),
-    ) do add_ts, del_tss, sig, children
-        if !haskey(state, :data)
-            return []
-        end
-        timestamps = something.([add_ts; del_tss...], 0)
-        _, maxidx = findmax(something.(timestamps, 0))
-        idx = length(something(children, [])) + 1
-        if something(maxidx, 1) > 1
-            del!(children, maxidx - 1)
+    ) do add_ts, del_tss, datajson, datats, children
+        if isempty(datajson)
+            ""
         else
-            add!(children, idx)
+            data = DataFrame(jsontable(datajson))
+            timestamps = something.([add_ts; del_tss...], 0)
+            maxbtnts, maxidx = findmax(something.(timestamps, 0))
+            if datats > maxbtnts
+                children = []
+            end
+            idx = length(something(children, [])) + 1
+            if something(maxidx, 1) > 1
+                del!(data, children, maxidx - 1)
+            else
+                add!(data, children, idx)
+            end
         end
     end
 end
@@ -165,15 +174,17 @@ callbacks[:ag_scitype] = function (app, state)
         app,
         Output((type=ID.AG_SEL_TYPE, index=MATCH), "options"),
         Output((type=ID.AG_SEL_TYPE, index=MATCH), "value"),
-        Input(ID.DT_OUTPUT, "children"),
+        Input(ID.DT_STORE, "data"),
         Input(ID.AG_AGS, "children"),
         Input((type=ID.AG_SEL_COL, index=MATCH), "value"),
-    ) do _, _, col
-        if haskey(state, :data) && !isnothing(col)
-            data = state[:data]
+    ) do datajson, _, col
+        if !isempty(datajson) && !isnothing(col)
+            data = DataFrame(jsontable(datajson))
+            if !(col in names(data))
+                return [], nothing
+            end
             T = eltype(data[:, col])
             types = Process.type_to_scitype(T)
-            @show types
             [(value=t, label=t) for t in types], first(types)
         else
             [], nothing
@@ -186,10 +197,10 @@ callbacks[:ag_scitype2agg] = function (app, state)
         app,
         Output((type=ID.AG_SEL_AG, index=MATCH), "options"),
         Output((type=ID.AG_SEL_AG, index=MATCH), "value"),
-        Input(ID.DT_OUTPUT, "children"),
+        Input(ID.DT_STORE, "data"),
         Input((type=ID.AG_SEL_TYPE, index=MATCH), "value"),
-    ) do _, type
-        if isnothing(type)
+    ) do datajson, type
+        if isnothing(type) || isempty(datajson)
             [], nothing
         else
             aggs = Process.scitype_agg(type)
@@ -201,15 +212,15 @@ end
 callbacks[:ag_output] = function (app, state)
     callback!(
         app,
-        Output(ID.AG_OUTPUT, "children"),
-        Input(ID.DT_OUTPUT, "children"),
+        Output(ID.AG_DT_STORE, "data"),
+        Input(ID.DT_STORE, "data"),
         Input(ID.AG_SEL_ID, "value"),
         Input((type=ID.AG_SEL_COL, index=ALL), "value"),
         Input((type=ID.AG_SEL_TYPE, index=ALL), "value"),
         Input((type=ID.AG_SEL_AG, index=ALL), "value"),
-    ) do _, id, columns, scitypes, aggs
+    ) do datajson, id, columns, scitypes, aggs
         if isnothing(id) ||
-           !haskey(state, :data) ||
+           isempty(datajson) ||
            any(isnothing.(columns)) ||
            any(isnothing.(scitypes)) ||
            any(isnothing.(aggs)) ||
@@ -225,7 +236,7 @@ callbacks[:ag_output] = function (app, state)
         aggregations = unique(aggregations)
 
         # aggregate
-        df = state[:data]
+        df = DataFrame(jsontable(datajson))
         aggdf = combine(groupby(df, id), aggregations...)
 
         # Convert column to correct type
@@ -239,9 +250,20 @@ callbacks[:ag_output] = function (app, state)
                 aggdf[:, i] = categorical((aggdf[:, i]))
             end
         end
-        state[:aggdata] = aggdf
-        delete!(state, :dists)
-        return Views.rawDF(aggdf, 5)
+        return objecttable(aggdf)
+    end
+end
+
+callbacks[:ag_output_preview] = function (app, args...)
+    callback!(
+        app, Output(ID.AG_OUTPUT, "children"), Input(ID.AG_DT_STORE, "data")
+    ) do agg_data_json
+        if isempty(something(agg_data_json, ""))
+            return ""
+        else
+            df = DataFrame(jsontable(agg_data_json))
+            return Views.rawDF(df, 3)
+        end
     end
 end
 
@@ -254,81 +276,46 @@ callbacks[:cl_init] = function (app, state)
         Output(ID.CL_PLOT_Y, "options"),
         Output(ID.CL_PLOT_X, "value"),
         Output(ID.CL_PLOT_Y, "value"),
+        Output(ID.CL_NCL, "max"),
         Input(ID.AG_OUTPUT, "children"),
-    ) do c
-        if isempty(c) || !haskey(state, :aggdata)
-            return [], [], nothing, nothing
+        Input(ID.AG_DT_STORE, "data"),
+    ) do c, agdatajson
+        if isempty(c) || isempty(agdatajson)
+            return [], [], nothing, nothing, 0
         end
-        aggdata = state[:aggdata]
+        aggdata = DataFrame(jsontable(agdatajson))
         columns = names(aggdata)
         options = [(value=c, label=c) for c in columns]
         value = get(columns, 1, nothing)
-        return options, options, value, value
+        return options, options, value, value, size(aggdata, 1)
     end
 end
 
 callbacks[:cl_run] = function (app, state)
-    function elbow(mth, dists)
-        results = map(1:9) do k
-            try
-                Process.cluster(mth, dists, k)
-            catch e
-                @warn e
-                nothing
-            end
-        end
-        return filter(!isnothing, results)
-    end
-
-    function single(mth, dists, k)
-        return Process.cluster(mth, dists, k)
-    end
-
     callback!(#
         app,
         Output(ID.CL_PLOT, "children"),
         Input(ID.CL_RUN_BTN, "n_clicks_timestamp"),
         Input(ID.CL_ELBOW_BTN, "n_clicks_timestamp"),
+        Input(ID.AG_DT_STORE, "data"),
         State(ID.AG_SEL_ID, "value"),
         State(ID.CL_NCL, "value"),
         State(ID.CL_SEL_MTH, "value"),
         State(ID.CL_PLOT_X, "value"),
         State(ID.CL_PLOT_Y, "value"),
-    ) do single_ts, elbow_ts, id, ncl, mth, colx, coly
-        if isnothing(colx) || isnothing(coly) || !haskey(state, :aggdata)
+    ) do single_ts, elbow_ts, datajson, id, ncl, mth, colx, coly
+        if isnothing(colx) || isnothing(coly) || isempty(datajson) || isnothing(mth)
             return ""
         end
-        data = state[:aggdata]
-        columns = names(data)
-        # validate cache
-        if !(colx in columns && coly in columns)
-            delete!(state, :dists)
+        data = DataFrame(jsontable(datajson))
+        if ncl > size(data, 1)
+            return "Number of cluster is too large"
         end
-        # cache distance
-        if !haskey(state, :dists)
-            state[:dists] = Process.gower(select(data, Not(id)))
-        end
-        dists = state[:dists]
         if something(single_ts, 0) > something(elbow_ts, 9)
-            result = if mth == "KMEAN"
-                values, columns = Process.numeric_value(data)
-                oldcolumns = names(data)
-                columns = [columns; setdiff(oldcolumns, columns)]
-                @show columns
-                result = kmeans(transpose(values), ncl)
-                Views.plot_result(result, select(data, columns), colx, coly)
-            elseif mth == "KMEDOID"
-                result = kmedoids(dists, ncl)
-                Views.plot_result(result, data, colx, coly)
-            elseif mth == "PAM"
-                result = pam(dists, ncl)
-                Views.plot_result(result, data, colx, coly)
-            else
-                return "??"
-            end
-            #Views.single_plot(result, data[!, colx], data[!, coly])
+            result = Process.cluster(mth, data, ncl)
+            Views.plot_result(result, data, colx, coly)
         else
-            result = elbow(mth, dists)
+            result = Process.elbow(mth, data)
             Views.elbow_plot(result)
         end
     end

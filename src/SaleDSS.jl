@@ -31,6 +31,7 @@ state = Dict()
 
 ID = (#
     CLEAR_CACHE="clear-cache",
+    DT_STORE="data-store",
     DT_SELECT="dt:select",
     DT_PROCESSES="dt:processes",
     DT_OUTPUT="dt:data",
@@ -46,6 +47,7 @@ ID = (#
     dataDirectory=joinpath(@__DIR__, "..", "data"),
     # AGGREGATION
     AG_UI="ag-ui",
+    AG_DT_STORE="aggdata-store",
     AG_AGS="ag-aggregations",
     AG_ADD_BTN="ag-add-btn",
     AG_SEL_ID="ag-select-id",
@@ -106,7 +108,7 @@ function setup_layout!(app)
             #    html_div(; id="group-output")
             #end,
             html_div(Views.states())
-            html_h1("Sale DSS")
+            html_h1("K-Cluster Tool")
             html_div(; className="divider")
             html_div(
                 [
@@ -120,14 +122,18 @@ function setup_layout!(app)
                 ],
             )
             html_br()
-            html_h4("Data aggregate")
             html_div(
-                [#
-                    Views.ag_input()
-                    html_br()
-                    Views.ag_output()
-                ];
-                id=ID.AG_UI,
+                [
+                    html_h4("Data aggregate")
+                    html_div(
+                        [#
+                            Views.ag_input()
+                            html_br()
+                            Views.ag_output()
+                        ];
+                        id=ID.AG_UI,
+                    )
+                ],
             )
 
             # CLEAN & CLUSTERING

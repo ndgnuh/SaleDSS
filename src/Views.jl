@@ -159,6 +159,7 @@ function cl_input()
         dbc_label("Clustering method"),
         dbc_select(;#
             options=genOptions(Process.CL_METHODS),
+            value="PAM",
             id=ID.CL_SEL_MTH,
         ),
         dbc_label("Plot X axis"),
@@ -220,7 +221,12 @@ function dt_output()
         [#
             dbc_cardheader("Preview"),
             dbc_cardbody() do
-                html_div([dcc_loading(; children=html_div(; id=ID.DT_OUTPUT))])
+                dcc_loading(
+                    [
+                        dcc_store(; id=ID.DT_STORE, storage_type="session")
+                        html_div(; id=ID.DT_OUTPUT)
+                    ],
+                )
             end,
         ]
     end
@@ -247,7 +253,12 @@ function ag_output()
     dbc_card() do
         dbc_cardheader("Output"),
         dbc_cardbody() do
-            dcc_loading(html_div(; id=ID.AG_OUTPUT))
+            dcc_loading(
+                [
+                    dcc_store(; id=ID.AG_DT_STORE, storage_type="session")
+                    html_div(; id=ID.AG_OUTPUT)
+                ],
+            )
         end
     end
 end

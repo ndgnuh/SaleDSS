@@ -11,16 +11,21 @@ using CategoricalArrays
 
 ACTS = [:Aggregate, :PCA, :CLUS]
 
-CL_METHODS = [:PAM, :KMEDOID, :KMEAN, :DBSCAN]
+CL_METHODS = [:PAM, :KMEDOID, :KMEAN]
 
-function deviation(X::AbstractVector{T}) where {T<:Number}
-    return std(X)
+function deviation(X::AbstractVector{T}) where {T<:Union{Missing,Number}}
+    Xnomissing = filter(!ismissing, X)
+    X = replace(X, missing => mean(Xnomissing))
+    result = std(X)
+    return isnan(result) ? zero(T) : result
 end
 function deviation(X::CategoricalArray)
     X = levelcode.(X)
-    return std(X)
+    return deviation(X)
 end
-function deviation(X::AbstractVector)
+function deviation(X::AbstractVector{T}) where {T<:Union{Missing,AbstractString}}
+    X0 = filter(!ismissing, X)
+    X = replace(X, missing => mode(X0))
     return deviation(categorical(X))
 end
 
@@ -50,8 +55,10 @@ end
 function scitype_agg(scitype)
     if scitype === "NUMERIC"
         [:MEAN, :SUM, :STD, :MAX, :MIN, :COUNT, :MODE]
+    elseif scitype === "CATEGORICAL"
+        [:MODE, :STD, :COUNT]
     else
-        [:STD, :MAX, :MIN, :COUNT, :MODE]
+        [:MODE, :STD, :MAX, :MIN, :COUNT]
     end
 end
 
@@ -102,20 +109,6 @@ function gower(df::AbstractDataFrame)
     return dists
 end
 
-#TODO: add more aggregation
-function cluster(mth, args...)
-    if mth === "KMEDOID"
-        dists, k = args
-        kmedoids(dists, k)
-    elseif mth === "PAM"
-        dists, k = args
-        pam(dists, k)
-    elseif mth === "KMEAN"
-        X, k = args
-        kmeans(X, k)
-    end
-end
-
 function cluster_weight(df::AbstractDataFrame)
     @assert ("assignments" in names(df)) "DataFrame has no assignments column"
     gdf = groupby(df, :assignments)
@@ -135,12 +128,70 @@ function numeric_value(df::AbstractDataFrame)
             cvals
         elseif eltype(cvals) <: CategoricalValue
             levelcode.(cvals)
-        else
-            nothing
+        elseif eltype(cvals) <: AbstractString
+            levelcode.(categorical(cvals))
         end
     end
     values = filter(!isnothing, values)
     return reduce(hcat, values), columns
+end
+
+function cluster(::Val{:KMEAN}, data, k)
+    @show "kmean"
+    values, _ = numeric_value(data)
+    return kmeans(transpose(values), k)
+end
+
+function cluster(::Val{:KMEDOID}, data, k)
+    @show "kmedoid"
+    dists = gower(data)
+    return kmedoids(dists, k)
+end
+
+function cluster(::Val{:PAM}, data, k)
+    @show "pam"
+    dists = gower(data)
+    return pam(dists, k)
+end
+
+function cluster(method::AbstractString, args...; kwargs...)
+    return cluster(Val(Symbol(method)), args...; kwargs...)
+end
+
+function elbow(method::AbstractString, args...; kwargs...)
+    return elbow(Val(Symbol(method)), args...; kwargs...)
+end
+
+function elbow(::Val{:KMEAN}, data)
+    values, _ = numeric_value(data)
+    n = min(15, size(data, 1))
+    results = map(1:n) do i
+        try
+            kmeans(transpose(values), i)
+        catch e
+            @warn e
+            return nothing
+        end
+    end
+    return filter(!isnothing, results)
+end
+
+function elbow(::Val{:KMEDOID}, data)
+    dists = gower(data)
+    n = min(15, size(data, 1))
+    results = map(2:n) do k
+        try
+            kmedoids(dists, k)
+        catch e
+            @warn e
+            return nothing
+        end
+    end
+    return filter(!isnothing, results)
+end
+
+function elbow(::Val{:PAM}, data)
+    return elbow(Val(:KMEDOID), data)
 end
 
 end
